@@ -9,3 +9,7 @@ storage/
 *.db-shm
 certs/
 logs/
+
+# Machine-specific deployment details (real hosts, users)
+.env.deploy
+.gemini/rules/*.local.md

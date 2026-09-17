@@ -77,14 +77,14 @@ This document preserves the hard-won lessons, architectural boundaries, and depl
    - When unset, auth is completely disabled for zero-friction local development.
 
 6. **Production Deployment Target Invariant (Homelab Linux VM, Never Windows)**:
-   - **Production deployment MUST ALWAYS target the homelab Linux VM (`100.103.11.109`), NEVER the local Windows machine.**
-   - The local Windows workstation serves strictly as the development environment and GPU inference worker (providing Ollama via `extra_hosts: [gpu-worker:100.102.124.29]`).
-   - The user and household members access the live application from phones and mobile devices via **`https://100.103.11.109/`**.
-   - Standard deployment procedure:
+   - **Production deployment MUST ALWAYS target the homelab Linux VM, NEVER the local Windows machine.**
+   - The local Windows workstation serves strictly as the development environment and GPU inference worker (providing Ollama to the container through an `extra_hosts` entry for `gpu-worker`).
+   - The user and household members access the live application from phones and mobile devices via **`https://<homelab-host>/`**.
+   - Standard deployment procedure (or run `deploy_vm.ps1`, configured from `.env.deploy`; see `.env.deploy.example`):
      ```bash
      # 1. Sync updated code and assets to the homelab VM
-     scp -r app static requirements.txt eric-mcneel@100.103.11.109:~/fitness-tracker/
+     scp -r app static requirements.txt <ssh-user>@<homelab-host>:~/fitness-tracker/
 
      # 2. Set permissions, rebuild, and restart the tracker container
-     ssh eric-mcneel@100.103.11.109 "chmod -R a+rX ~/fitness-tracker/app ~/fitness-tracker/static && cd ~/fitness-tracker && docker compose build tracker && docker compose up -d tracker"
+     ssh <ssh-user>@<homelab-host> "chmod -R a+rX ~/fitness-tracker/app ~/fitness-tracker/static && cd ~/fitness-tracker && docker compose build tracker && docker compose up -d tracker"
      ```
