@@ -242,7 +242,20 @@ document.addEventListener('DOMContentLoaded', markNav);
 // It silently does nothing on an insecure origin, which is correct -- the camera
 // does not work there either, so there is nothing worth installing yet.
 if ('serviceWorker' in navigator && window.isSecureContext) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => { /* non-fatal */ });
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      // Proactively check for an updated service worker
+      reg.update().catch(() => {});
+    } catch { /* non-fatal */ }
+  });
+
+  // If a new service worker took control, reload to get the latest assets
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
   });
 }

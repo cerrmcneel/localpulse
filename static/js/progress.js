@@ -600,11 +600,24 @@ function applyPicks() {
   } else {
     applyAlignment({ scale: 100, x: 0, y: 0 }, false);
   }
+
+  applySplit();
 }
 
 function applySplit() {
-  const value = $('split').value;
-  $('compare').style.setProperty('--split', `${value}%`);
+  const value = $('split')?.value ?? 50;
+  const compare = $('compare');
+  const afterPane = $('compare-after-pane');
+  const handle = $('handle');
+  if (compare) compare.style.setProperty('--split', `${value}%`);
+  if (afterPane) {
+    const clipVal = `inset(0 0 0 ${value}%)`;
+    afterPane.style.clipPath = clipVal;
+    afterPane.style.webkitClipPath = clipVal;
+  }
+  if (handle) {
+    handle.style.left = `${value}%`;
+  }
 }
 
 // Interactive Touch & Mouse Dragging for Alignment

@@ -470,7 +470,9 @@ body.cam { padding: 0; background: #000; overflow: hidden; }
   overflow: hidden;
 }
 .compare-pane.after {
+  -webkit-clip-path: inset(0 0 0 var(--split, 50%));
   clip-path: inset(0 0 0 var(--split, 50%));
+  will-change: clip-path, -webkit-clip-path;
 }
 .compare img {
   position: absolute;
