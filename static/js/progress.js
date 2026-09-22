@@ -356,6 +356,31 @@ function forPose() {
                   .sort((a, b) => a.day.localeCompare(b.day));
 }
 
+function populatePhotoSelect(selectEl, list, selectedUrl) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+  let selectedIdx = 0;
+  list.forEach((p, idx) => {
+    const opt = document.createElement('option');
+    opt.value = p.url;
+    opt.textContent = p.day;
+    opt.dataset.id = p.id;
+    opt.dataset.bytes = p.bytes || 0;
+    opt.dataset.day = p.day;
+    if (p.url === selectedUrl) {
+      opt.selected = true;
+      selectedIdx = idx;
+    }
+    selectEl.appendChild(opt);
+  });
+  // Explicitly set .value, .selectedIndex, and property for mobile WebKit/Safari compatibility
+  selectEl.value = selectedUrl;
+  selectEl.selectedIndex = selectedIdx;
+  if (selectEl.options[selectedIdx]) {
+    selectEl.options[selectedIdx].selected = true;
+  }
+}
+
 function renderCompare() {
   const list = forPose();
   const enough = list.length >= 2;
@@ -366,16 +391,19 @@ function renderCompare() {
   const curBefore = $('pick-before')?.value;
   const curAfter = $('pick-after')?.value;
 
-  const options = (selected) => list.map((p) =>
-    `<option value="${esc(p.url)}" data-id="${p.id}" data-bytes="${p.bytes || 0}" data-day="${esc(p.day)}" ${p.url === selected ? 'selected' : ''}>
-      ${esc(p.day)}</option>`).join('');
-
   // Default to earliest (first) and latest (last)
-  const bVal = list.some((p) => p.url === curBefore) ? curBefore : list[0].url;
-  const aVal = list.some((p) => p.url === curAfter) ? curAfter : list[list.length - 1].url;
+  let bVal = list.some((p) => p.url === curBefore) ? curBefore : list[0].url;
+  let aVal = list.some((p) => p.url === curAfter) ? curAfter : list[list.length - 1].url;
 
-  $('pick-before').innerHTML = options(bVal);
-  $('pick-after').innerHTML = options(aVal);
+  // If both ended up identical (e.g. mobile select restoration or initial state),
+  // guarantee before is earliest and after is latest so both sides never load the same photo.
+  if (bVal === aVal && list.length >= 2) {
+    bVal = list[0].url;
+    aVal = list[list.length - 1].url;
+  }
+
+  populatePhotoSelect($('pick-before'), list, bVal);
+  populatePhotoSelect($('pick-after'), list, aVal);
   applyPicks();
 }
 
@@ -552,11 +580,15 @@ async function autoAlignSilhouette() {
 function applyPicks() {
   const before = $('pick-before');
   const after = $('pick-after');
-  if (!before || !after || !before.selectedOptions.length || !after.selectedOptions.length) return;
-  const bOpt = before.selectedOptions[0];
-  const aOpt = after.selectedOptions[0];
-  $('img-before').src = `${before.value}?t=${bOpt.dataset.bytes || ''}`;
-  $('img-after').src = `${after.value}?t=${aOpt.dataset.bytes || ''}`;
+  if (!before || !after) return;
+  const bOpt = before.selectedOptions?.[0] || (before.selectedIndex >= 0 ? before.options[before.selectedIndex] : null);
+  const aOpt = after.selectedOptions?.[0] || (after.selectedIndex >= 0 ? after.options[after.selectedIndex] : null);
+  if (!bOpt || !aOpt) return;
+
+  const bUrl = before.value || bOpt.value;
+  const aUrl = after.value || aOpt.value;
+  $('img-before').src = `${bUrl}?t=${bOpt.dataset.bytes || ''}`;
+  $('img-after').src = `${aUrl}?t=${aOpt.dataset.bytes || ''}`;
   $('label-before').textContent = `Earlier: ${prettyDate(bOpt.dataset.day)}`;
   $('label-after').textContent = `Later: ${prettyDate(aOpt.dataset.day)}`;
 
@@ -795,19 +827,55 @@ $('gallery').addEventListener('click', (e) => {
 
 $('btn-rotate-before')?.addEventListener('click', (e) => {
   const sel = $('pick-before');
-  const id = sel?.selectedOptions[0]?.dataset.id;
+  const id = sel?.selectedOptions?.[0]?.dataset.id || (sel?.selectedIndex >= 0 ? sel.options[sel.selectedIndex]?.dataset.id : null);
   rotatePhoto(id, e.currentTarget);
 });
 
 $('btn-rotate-after')?.addEventListener('click', (e) => {
   const sel = $('pick-after');
-  const id = sel?.selectedOptions[0]?.dataset.id;
+  const id = sel?.selectedOptions?.[0]?.dataset.id || (sel?.selectedIndex >= 0 ? sel.options[sel.selectedIndex]?.dataset.id : null);
   rotatePhoto(id, e.currentTarget);
 });
 
 $('split').addEventListener('input', applySplit);
-$('pick-before').addEventListener('change', applyPicks);
-$('pick-after').addEventListener('change', applyPicks);
+
+$('pick-before')?.addEventListener('change', () => {
+  const before = $('pick-before');
+  const after = $('pick-after');
+  if (before && after && before.value === after.value) {
+    const list = forPose();
+    const idx = list.findIndex((p) => p.url === before.value);
+    const alt = list[idx + 1] || list[list.length - 1] || list[0];
+    if (alt && alt.url !== before.value) {
+      after.value = alt.url;
+      const altIdx = list.findIndex((p) => p.url === alt.url);
+      if (altIdx >= 0) {
+        after.selectedIndex = altIdx;
+        if (after.options[altIdx]) after.options[altIdx].selected = true;
+      }
+    }
+  }
+  applyPicks();
+});
+
+$('pick-after')?.addEventListener('change', () => {
+  const before = $('pick-before');
+  const after = $('pick-after');
+  if (before && after && before.value === after.value) {
+    const list = forPose();
+    const idx = list.findIndex((p) => p.url === after.value);
+    const alt = (idx > 0 ? list[idx - 1] : null) || list[0];
+    if (alt && alt.url !== after.value) {
+      before.value = alt.url;
+      const altIdx = list.findIndex((p) => p.url === alt.url);
+      if (altIdx >= 0) {
+        before.selectedIndex = altIdx;
+        if (before.options[altIdx]) before.options[altIdx].selected = true;
+      }
+    }
+  }
+  applyPicks();
+});
 
 applySplit();
 
