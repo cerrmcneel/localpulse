@@ -115,15 +115,20 @@ def infer_meal_type(dt: datetime | None = None) -> str:
 def create_meal(request: Request, meal: MealIn):
     """Commit a reviewed meal, claiming its pending photo if one was supplied."""
     when = config.now()
-    day = (meal.day or when.date()).isoformat()
+    target_date = meal.day or when.date()
+    day = target_date.isoformat()
+
+    # Retain the time-of-day on the target date so the meal renders at the right time
+    logged_at_dt = datetime.combine(target_date, when.time()).replace(tzinfo=when.tzinfo) if meal.day else when
+    logged_at = logged_at_dt.isoformat()
 
     image_path = None
     if meal.pending_image:
-        image_path = images.commit_pending(meal.pending_image, when)
+        image_path = images.commit_pending(meal.pending_image, logged_at_dt)
 
     meal_type = meal.meal_type
     if not meal_type or meal_type == "other":
-        meal_type = infer_meal_type(when)
+        meal_type = infer_meal_type(logged_at_dt)
 
     with get_conn() as conn:
         profile_id = get_profile_id(request, conn)
@@ -131,7 +136,7 @@ def create_meal(request: Request, meal: MealIn):
             """INSERT INTO meals (profile_id, day, logged_at, name, meal_type, source,
                                   image_path, model, notes, raw_json)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (profile_id, day, when.isoformat(), meal.name, meal_type, meal.source,
+            (profile_id, day, logged_at, meal.name, meal_type, meal.source,
              image_path, meal.model, meal.notes, meal.raw_json),
         )
         meal_id = cur.lastrowid
@@ -163,10 +168,12 @@ def get_meal(request: Request, meal_id: int):
 
 
 @router.post("/meals/{meal_id}/duplicate", status_code=201)
-def duplicate_meal(request: Request, meal_id: int):
-    """Log this meal again today -- duplicates items and macros for fast meal reuse."""
+def duplicate_meal(request: Request, meal_id: int, day: date | None = None):
+    """Log this meal again today (or specified day) -- duplicates items and macros for fast meal reuse."""
     when = config.now()
-    today = when.date().isoformat()
+    target_date = day or when.date()
+    target_day = target_date.isoformat()
+    logged_dt = datetime.combine(target_date, when.time()).replace(tzinfo=when.tzinfo) if day else when
     with get_conn() as conn:
         profile_id = get_profile_id(request, conn)
         src = _fetch_meal(conn, meal_id)
@@ -177,7 +184,7 @@ def duplicate_meal(request: Request, meal_id: int):
             """INSERT INTO meals (profile_id, day, logged_at, name, meal_type, source,
                                   image_path, model, notes, raw_json)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (profile_id, today, when.isoformat(), src["name"], infer_meal_type(when), "manual",
+            (profile_id, target_day, logged_dt.isoformat(), src["name"], infer_meal_type(logged_dt), "manual",
              src["image_path"], src["model"], src["notes"], None),
         )
         new_id = cur.lastrowid

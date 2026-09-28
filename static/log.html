@@ -25,6 +25,17 @@
   <!-- STEP 1: capture, describe, or both -->
   <section class="card" id="step-capture">
     <h2>Photo &amp; Details</h2>
+    <div class="field" style="margin-bottom:14px">
+      <label for="meal-date" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Meal Date</span>
+        <span id="meal-date-badge" class="muted" style="font-size:11.5px;font-weight:normal">Today</span>
+      </label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="date" id="meal-date" style="flex:1">
+        <button type="button" class="btn" id="btn-date-today" style="flex:none;font-size:12px;padding:0 10px">Today</button>
+        <button type="button" class="btn" id="btn-date-yesterday" style="flex:none;font-size:12px;padding:0 10px">Yesterday</button>
+      </div>
+    </div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 12px">
       Provide a <b>photo</b>, a <b>description</b>, or <b>both</b> for maximum accuracy.
     </p>
@@ -87,6 +98,16 @@
           <option value="snack">Snack</option>
           <option value="other">Other</option>
         </select>
+      <div class="field">
+        <label for="review-meal-date" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Meal Date</span>
+          <span id="review-date-badge" class="muted" style="font-size:11.5px;font-weight:normal">Today</span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="date" id="review-meal-date" style="flex:1">
+          <button type="button" class="btn" id="btn-review-date-today" style="flex:none;font-size:12px;padding:0 10px">Today</button>
+          <button type="button" class="btn" id="btn-review-date-yesterday" style="flex:none;font-size:12px;padding:0 10px">Yesterday</button>
+        </div>
       </div>
       <div id="model-notes" class="banner hidden"></div>
     </div>
@@ -145,6 +166,6 @@
   <a href="/capture"><svg viewBox="0 0 24 24"><path d="M3 8h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13" r="3.6"/></svg>Capture</a>
   <a href="/progress"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M13 16V8M18 16v-3"/></svg>Progress</a>
 </nav>
-<script type="module" src="/static/js/log.js"></script>
+<script type="module" src="/static/js/log.js?v=20260928"></script>
 </body>
 </html>

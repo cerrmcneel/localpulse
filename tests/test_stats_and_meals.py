@@ -117,6 +117,85 @@ def test_range_series_is_dense_including_unlogged_days(client, second_profile):
     assert days[-1] == config.now().date().isoformat()
 
 
+def test_log_meal_for_past_day(client, second_profile):
+    """User can log meals for yesterday or any day in the past."""
+    headers = {"X-Profile-ID": str(second_profile["id"])}
+    yesterday = (config.now().date() - timedelta(days=1)).isoformat()
+    today = config.now().date().isoformat()
+
+    res = client.post("/api/meals", json={
+        "name": "Late Dinner",
+        "day": yesterday,
+        "meal_type": "dinner",
+        "items": [
+            {"name": "Salmon salad", "calories": 450, "protein_g": 35, "carbs_g": 12, "fat_g": 20},
+        ],
+    }, headers=headers)
+    assert res.status_code == 201
+    meal = res.json()
+    assert meal["day"] == yesterday
+    assert meal["name"] == "Late Dinner"
+
+    # Meal is visible in yesterday's meals list
+    yest_meals = client.get(f"/api/meals?day={yesterday}", headers=headers).json()
+    assert any(m["id"] == meal["id"] for m in yest_meals["meals"])
+
+    # Meal is NOT in today's meals list
+    today_meals = client.get(f"/api/meals?day={today}", headers=headers).json()
+    assert all(m["id"] != meal["id"] for m in today_meals["meals"])
+
+    # Yesterday's daily stats reflect the meal
+    yest_stats = client.get(f"/api/stats/daily?day={yesterday}", headers=headers).json()
+    assert yest_stats["totals"]["calories"] == pytest.approx(450.0)
+    assert yest_stats["totals"]["protein_g"] == pytest.approx(35.0)
+    assert yest_stats["totals"]["meal_count"] == 1
+
+
+def test_duplicate_meal_to_target_past_day(client, second_profile):
+    """Duplicate a meal into a specific past day."""
+    headers = {"X-Profile-ID": str(second_profile["id"])}
+    yesterday = (config.now().date() - timedelta(days=1)).isoformat()
+
+    # Create original meal today
+    src = client.post("/api/meals", json={
+        "name": "Oatmeal",
+        "items": [{"name": "Oats", "calories": 300, "protein_g": 10, "carbs_g": 50, "fat_g": 5}],
+    }, headers=headers).json()
+
+    # Duplicate to yesterday
+    dup_res = client.post(f"/api/meals/{src['id']}/duplicate?day={yesterday}", json={}, headers=headers)
+    assert dup_res.status_code == 201
+    dup_meal = dup_res.json()
+    assert dup_meal["day"] == yesterday
+
+    yest_meals = client.get(f"/api/meals?day={yesterday}", headers=headers).json()
+    assert any(m["id"] == dup_meal["id"] for m in yest_meals["meals"])
+
+
+def test_move_meal_to_past_day_via_patch(client, second_profile):
+    """User can edit an existing meal to move it to yesterday."""
+    headers = {"X-Profile-ID": str(second_profile["id"])}
+    yesterday = (config.now().date() - timedelta(days=1)).isoformat()
+    today = config.now().date().isoformat()
+
+    meal = client.post("/api/meals", json={
+        "name": "Midnight Snack",
+        "items": [{"name": "Greek yogurt", "calories": 150, "protein_g": 15, "carbs_g": 6, "fat_g": 0}],
+    }, headers=headers).json()
+
+    # Move to yesterday
+    patch_res = client.patch(f"/api/meals/{meal['id']}", json={"day": yesterday}, headers=headers)
+    assert patch_res.status_code == 200
+    assert patch_res.json()["day"] == yesterday
+
+    # Verify moved out of today and into yesterday
+    today_meals = client.get(f"/api/meals?day={today}", headers=headers).json()
+    assert all(m["id"] != meal["id"] for m in today_meals["meals"])
+
+    yest_meals = client.get(f"/api/meals?day={yesterday}", headers=headers).json()
+    assert any(m["id"] == meal["id"] for m in yest_meals["meals"])
+
+
 # --- workouts: day filtering and the local-time week window ---
 
 def test_workout_list_can_be_filtered_to_a_single_day(client, second_profile):

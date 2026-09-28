@@ -1,4 +1,4 @@
-import { postForm, postJSON, fmt, round, toast, esc, checkHealth, prettyDate, todayISO, inferMealType, getFoodIcon } from './api.js';
+import { postForm, postJSON, fmt, round, toast, esc, checkHealth, prettyDate, shiftDay, todayISO, inferMealType, getFoodIcon } from './api.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -6,7 +6,47 @@ const $ = (id) => document.getElementById(id);
 let draft = { name: 'Meal', items: [], pendingImage: null, model: null, raw: null, source: 'manual' };
 let previewURL = null;
 
-$('today').textContent = prettyDate(todayISO());
+// Date state and initialization (supports logging for yesterday or any past day)
+const urlParams = new URLSearchParams(window.location.search);
+const initialDay = urlParams.get('day') || todayISO();
+let selectedMealDay = initialDay;
+
+function setMealDay(d) {
+  selectedMealDay = d || todayISO();
+  if ($('meal-date')) $('meal-date').value = selectedMealDay;
+  if ($('review-meal-date')) $('review-meal-date').value = selectedMealDay;
+
+  const label = prettyDate(selectedMealDay);
+  const isPast = selectedMealDay < todayISO();
+  const badgeText = isPast ? `${label} (${selectedMealDay})` : label;
+  if ($('meal-date-badge')) {
+    $('meal-date-badge').textContent = badgeText;
+    $('meal-date-badge').style.color = isPast ? 'var(--accent)' : 'var(--muted)';
+    $('meal-date-badge').style.fontWeight = isPast ? '600' : 'normal';
+  }
+  if ($('review-date-badge')) {
+    $('review-date-badge').textContent = badgeText;
+    $('review-date-badge').style.color = isPast ? 'var(--accent)' : 'var(--muted)';
+    $('review-date-badge').style.fontWeight = isPast ? '600' : 'normal';
+  }
+  if ($('today')) {
+    $('today').textContent = isPast ? `Logging for ${label} (${selectedMealDay})` : prettyDate(todayISO());
+    $('today').style.color = isPast ? 'var(--accent)' : '';
+  }
+}
+
+const todayStr = todayISO();
+const yesterdayStr = shiftDay(todayStr, -1);
+if ($('meal-date')) $('meal-date').max = todayStr;
+if ($('review-meal-date')) $('review-meal-date').max = todayStr;
+setMealDay(initialDay);
+
+$('meal-date')?.addEventListener('change', (e) => setMealDay(e.target.value));
+$('review-meal-date')?.addEventListener('change', (e) => setMealDay(e.target.value));
+$('btn-date-today')?.addEventListener('click', () => setMealDay(todayStr));
+$('btn-date-yesterday')?.addEventListener('click', () => setMealDay(yesterdayStr));
+$('btn-review-date-today')?.addEventListener('click', () => setMealDay(todayStr));
+$('btn-review-date-yesterday')?.addEventListener('click', () => setMealDay(yesterdayStr));
 
 function show(step) {
   for (const id of ['step-capture', 'step-loading', 'step-review']) {
@@ -276,9 +316,13 @@ $('btn-save').addEventListener('click', async () => {
       pending_image: draft.pendingImage,
       model: draft.model,
       raw_json: draft.raw,
+      day: selectedMealDay,
     });
-    toast('Meal saved');
-    setTimeout(() => { location.href = '/'; }, 600);
+    const dayLabel = prettyDate(selectedMealDay);
+    toast(selectedMealDay === todayISO() ? 'Meal saved' : `Meal saved for ${dayLabel}`);
+    setTimeout(() => {
+      location.href = selectedMealDay === todayISO() ? '/' : `/?day=${encodeURIComponent(selectedMealDay)}`;
+    }, 600);
   } catch (err) {
     toast(err.message, true);
     btn.disabled = false;

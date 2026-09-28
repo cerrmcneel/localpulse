@@ -804,6 +804,18 @@ async function loadDay() {
 
   renderTotals(stats);
   renderMeals(meals.meals);
+
+  const logLink = $('btn-log-meal-link');
+  if (logLink) {
+    if (day === todayISO()) {
+      logLink.href = '/log';
+      logLink.textContent = '+ Log a meal';
+    } else {
+      logLink.href = `/log?day=${encodeURIComponent(day)}`;
+      logLink.textContent = `+ Log meal for ${prettyDate(day)}`;
+    }
+  }
+
   renderTodayWorkout(workoutsData?.workouts || [], weekPlan);
   fillTargetsModal(stats.targets);
 }
@@ -958,11 +970,8 @@ function renderMeals(meals) {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.repeat;
       try {
-        await postJSON(`/api/meals/${id}/duplicate`, {});
-        toast('Meal copied to today');
-        if (day !== todayISO()) {
-          day = todayISO();
-        }
+        await postJSON(`/api/meals/${id}/duplicate?day=${encodeURIComponent(day)}`, {});
+        toast(day === todayISO() ? 'Meal copied to today' : `Meal copied to ${prettyDate(day)}`);
         await loadDay();
         await loadChart();
       } catch (err) {
@@ -991,6 +1000,14 @@ function openEditMealModal(meal) {
   $('edit-meal-name').value = meal.name;
   $('edit-meal-type').value = meal.meal_type || 'other';
   $('edit-meal-notes').value = meal.notes || '';
+  if ($('edit-meal-day')) {
+    $('edit-meal-day').value = meal.day || day;
+    $('edit-meal-day').max = todayISO();
+  }
+  const btnToday = $('btn-edit-date-today');
+  if (btnToday) btnToday.onclick = () => { if ($('edit-meal-day')) $('edit-meal-day').value = todayISO(); };
+  const btnYest = $('btn-edit-date-yesterday');
+  if (btnYest) btnYest.onclick = () => { if ($('edit-meal-day')) $('edit-meal-day').value = shiftDay(todayISO(), -1); };
 
   const itemsBox = $('edit-meal-items');
   itemsBox.innerHTML = `
@@ -1001,11 +1018,12 @@ function openEditMealModal(meal) {
           <span class="food-icon-badge" style="font-size:16px">${getFoodIcon(it.name)}</span>
           <input type="text" class="it-name" value="${esc(it.name)}" placeholder="Item name" required style="flex:1">
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:4px">
           <div><label style="font-size:10px">Grams</label><input type="number" class="it-g" value="${it.grams || 0}" min="0"></div>
           <div><label style="font-size:10px">Calories</label><input type="number" class="it-cal" value="${it.calories || 0}" min="0"></div>
           <div><label style="font-size:10px">Prot (g)</label><input type="number" class="it-p" value="${it.protein_g || 0}" min="0"></div>
           <div><label style="font-size:10px">Carb (g)</label><input type="number" class="it-c" value="${it.carbs_g || 0}" min="0"></div>
+          <div><label style="font-size:10px">Fat (g)</label><input type="number" class="it-f" value="${it.fat_g || 0}" min="0"></div>
         </div>
       </div>
     `).join('')}
@@ -1020,6 +1038,7 @@ $('edit-meal-form')?.addEventListener('submit', async (e) => {
   const name = $('edit-meal-name').value.trim();
   const meal_type = $('edit-meal-type').value;
   const notes = $('edit-meal-notes').value.trim();
+  const mealDay = $('edit-meal-day')?.value || day;
 
   const itemRows = document.querySelectorAll('.edit-item-row');
   const items = Array.from(itemRows).map((row) => ({
@@ -1028,14 +1047,20 @@ $('edit-meal-form')?.addEventListener('submit', async (e) => {
     calories: Number(row.querySelector('.it-cal').value) || 0,
     protein_g: Number(row.querySelector('.it-p').value) || 0,
     carbs_g: Number(row.querySelector('.it-c').value) || 0,
-    fat_g: 0,
+    fat_g: Number(row.querySelector('.it-f')?.value) || 0,
     confidence: 'high',
   }));
 
   try {
-    await patchJSON(`/api/meals/${id}`, { name, meal_type, notes, items });
+    await patchJSON(`/api/meals/${id}`, { name, meal_type, notes, items, day: mealDay });
     closeModal('edit-meal-modal');
-    toast('Meal updated');
+    const dayMoved = mealDay !== day;
+    if (dayMoved) {
+      day = mealDay;
+      toast(`Meal updated & moved to ${prettyDate(mealDay)}`);
+    } else {
+      toast('Meal updated');
+    }
     await loadDay();
     await loadChart();
   } catch (err) {
