@@ -30,7 +30,11 @@ CREATE TABLE IF NOT EXISTS profiles (
     onboarded_at   TEXT,
     track_back_photo INTEGER NOT NULL DEFAULT 0,
     pin_hash       TEXT,
-    pin_salt       TEXT
+    pin_salt       TEXT,
+    coaching_mode  TEXT NOT NULL DEFAULT 'coached',
+    coaching_paused INTEGER NOT NULL DEFAULT 0,
+    last_checkin_at TEXT,
+    last_estimated_tdee REAL
 );
 
 CREATE TABLE IF NOT EXISTS meals (
@@ -131,6 +135,29 @@ CREATE TABLE IF NOT EXISTS weekly_plans (
     UNIQUE(profile_id, week_start)
 );
 CREATE INDEX IF NOT EXISTS idx_weekly_plans_prof_week ON weekly_plans(profile_id, week_start);
+
+CREATE TABLE IF NOT EXISTS coaching_checkins (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id            INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at            TEXT    NOT NULL,
+    checkin_day           TEXT    NOT NULL,
+    goal                  TEXT    NOT NULL,
+    goal_rate_kg_per_week REAL    NOT NULL,
+    estimated_tdee        REAL    NOT NULL,
+    old_calorie_target    REAL    NOT NULL,
+    new_calorie_target    REAL    NOT NULL,
+    old_protein_target    REAL    NOT NULL,
+    new_protein_target    REAL    NOT NULL,
+    old_carbs_target      REAL    NOT NULL,
+    new_carbs_target      REAL    NOT NULL,
+    old_fat_target        REAL    NOT NULL,
+    new_fat_target        REAL    NOT NULL,
+    weight_trend_kg       REAL,
+    weight_change_rate    REAL,
+    status                TEXT    NOT NULL DEFAULT 'applied',
+    reasoning             TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_checkins_prof_day ON coaching_checkins(profile_id, checkin_day DESC);
 """
 
 AFTER_MIGRATE_SCHEMA = """
@@ -139,6 +166,7 @@ CREATE INDEX IF NOT EXISTS idx_photos_profile_pose_day ON progress_photos(profil
 CREATE INDEX IF NOT EXISTS idx_equip_profile ON profile_equipment(profile_id);
 CREATE INDEX IF NOT EXISTS idx_workouts_profile_day ON workouts(profile_id, day DESC);
 CREATE INDEX IF NOT EXISTS idx_weekly_plans_prof_week ON weekly_plans(profile_id, week_start);
+CREATE INDEX IF NOT EXISTS idx_checkins_prof_day ON coaching_checkins(profile_id, checkin_day DESC);
 
 -- Daily totals are derived, never stored, so edits to a meal can never drift
 -- out of sync with the day's headline number.
@@ -281,6 +309,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "track_back_photo": "INTEGER NOT NULL DEFAULT 0",
         "pin_hash": "TEXT",
         "pin_salt": "TEXT",
+        "coaching_mode": "TEXT NOT NULL DEFAULT 'coached'",
+        "coaching_paused": "INTEGER NOT NULL DEFAULT 0",
+        "last_checkin_at": "TEXT",
+        "last_estimated_tdee": "REAL",
     }
     for col_name, col_def in new_profile_cols.items():
         if col_name not in profile_cols:
@@ -314,6 +346,32 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_weekly_plans_prof_week ON weekly_plans(profile_id, week_start)")
+
+    # Ensure coaching_checkins table exists on existing databases
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS coaching_checkins (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            profile_id            INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+            created_at            TEXT    NOT NULL,
+            checkin_day           TEXT    NOT NULL,
+            goal                  TEXT    NOT NULL,
+            goal_rate_kg_per_week REAL    NOT NULL,
+            estimated_tdee        REAL    NOT NULL,
+            old_calorie_target    REAL    NOT NULL,
+            new_calorie_target    REAL    NOT NULL,
+            old_protein_target    REAL    NOT NULL,
+            new_protein_target    REAL    NOT NULL,
+            old_carbs_target      REAL    NOT NULL,
+            new_carbs_target      REAL    NOT NULL,
+            old_fat_target        REAL    NOT NULL,
+            new_fat_target        REAL    NOT NULL,
+            weight_trend_kg       REAL,
+            weight_change_rate    REAL,
+            status                TEXT    NOT NULL DEFAULT 'applied',
+            reasoning             TEXT    NOT NULL DEFAULT ''
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_checkins_prof_day ON coaching_checkins(profile_id, checkin_day DESC)")
 
 
 

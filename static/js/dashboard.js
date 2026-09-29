@@ -818,6 +818,7 @@ async function loadDay() {
 
   renderTodayWorkout(workoutsData?.workouts || [], weekPlan);
   fillTargetsModal(stats.targets);
+  await loadCoaching();
 }
 
 function renderTodayWorkout(workouts, weekPlan) {
@@ -1253,61 +1254,266 @@ $('btn-edit-profile-from-targets')?.addEventListener('click', () => {
   openEditProfileModal(currentProfile?.id);
 });
 
-// Quick Presets
+// --- Adaptive Macro Coaching & Weekly Check-Ins ---
+let currentCoaching = null;
 let currentBaseTDEE = 2200;
-document.querySelectorAll('.preset-btn').forEach((btn) => {
+
+async function loadCoaching() {
+  const card = $('coaching-card');
+  if (!card) return;
+  try {
+    const data = await getJSON('/api/coaching/status');
+    currentCoaching = data;
+
+    // Handle autonomous mode auto-apply if due
+    if (data.status === 'due' && data.coaching_mode === 'autonomous') {
+      try {
+        await postJSON('/api/coaching/checkin', { action: 'apply' });
+        const deltaStr = data.delta_calories >= 0 ? `+${data.delta_calories}` : `${data.delta_calories}`;
+        toast(`Autonomous Check-In: Targets updated (${deltaStr} kcal)`);
+        card.classList.add('hidden');
+        await loadDay();
+        return;
+      } catch (err) {
+        console.error('Autonomous check-in failed:', err);
+      }
+    }
+
+    if (data.status === 'due') {
+      card.classList.remove('hidden');
+      const goalIcon = data.goal === 'cut' ? '✂️ Cut' : (data.goal === 'bulk' ? '📈 Bulk' : '⚖️ Maintain');
+      const rateLabel = data.goal === 'maintain' ? '0 kg/wk' : `${data.goal_rate_kg_per_week} kg/wk`;
+      if ($('coaching-goal-chip')) $('coaching-goal-chip').textContent = `${goalIcon}: ${rateLabel}`;
+      if ($('coaching-est-tdee')) $('coaching-est-tdee').textContent = `~${fmt(data.estimated_tdee)} kcal`;
+      if ($('coaching-trend-weight')) {
+        const trendPace = `${data.rate_kg_per_week >= 0 ? '+' : ''}${data.rate_kg_per_week} kg/wk`;
+        $('coaching-trend-weight').textContent = `${fmt(data.trend_weight_kg, 1)} kg (${trendPace})`;
+      }
+      if ($('coaching-rec-cal')) {
+        const delta = data.delta_calories >= 0 ? `+${data.delta_calories}` : `${data.delta_calories}`;
+        $('coaching-rec-cal').textContent = `${fmt(data.recommended_targets.calories)} kcal (${delta})`;
+      }
+      if ($('coaching-rec-macros')) {
+        $('coaching-rec-macros').innerHTML = `
+          <b>P:</b> ${fmt(data.recommended_targets.protein_g)}g &middot;
+          <b>C:</b> ${fmt(data.recommended_targets.carbs_g)}g &middot;
+          <b>F:</b> ${fmt(data.recommended_targets.fat_g)}g
+        `;
+      }
+      if ($('coaching-reasoning')) $('coaching-reasoning').textContent = data.reasoning;
+    } else {
+      card.classList.add('hidden');
+    }
+
+    fillCoachingInModal(data);
+  } catch (err) {
+    console.warn('Failed to load coaching status:', err);
+    card.classList.add('hidden');
+  }
+}
+
+function fillCoachingInModal(data) {
+  if (!data) return;
+  if ($('modal-est-tdee')) $('modal-est-tdee').textContent = `~${fmt(data.estimated_tdee)} kcal`;
+  if ($('modal-trend-pace')) {
+    const pace = `${data.rate_kg_per_week >= 0 ? '+' : ''}${data.rate_kg_per_week} kg/wk`;
+    $('modal-trend-pace').textContent = pace;
+  }
+  if ($('coach-mode-select')) $('coach-mode-select').value = data.coaching_mode || 'coached';
+  if ($('coach-pause-toggle')) $('coach-pause-toggle').checked = !!data.coaching_paused;
+
+  const badge = $('modal-coaching-status-badge');
+  if (badge) {
+    badge.textContent = data.status === 'paused' ? 'Paused' : (data.status === 'due' ? 'Check-in Due' : 'Active');
+    badge.className = `chip ${data.status === 'due' ? 'high' : (data.status === 'paused' ? 'low' : 'medium')}`;
+  }
+
+  const currentGoal = data.goal || 'cut';
+  document.querySelectorAll('#goal-switcher-row .preset-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.goal === currentGoal);
+  });
+
+  const slider = $('goal-rate-slider');
+  if (slider) {
+    slider.value = data.goal_rate_kg_per_week != null ? data.goal_rate_kg_per_week : 0.5;
+    updateGoalRateDisplay(currentGoal, Number(slider.value));
+  }
+}
+
+function updateGoalRateDisplay(goal, rate) {
+  const box = $('goal-rate-box');
+  const label = $('goal-rate-label');
+  if (!box || !label) return;
+  if (goal === 'maintain') {
+    box.style.opacity = '0.35';
+    box.style.pointerEvents = 'none';
+    label.textContent = 'Energy Balance (±0 kcal)';
+  } else {
+    box.style.opacity = '1';
+    box.style.pointerEvents = 'auto';
+    const delta = Math.round((rate * 7700) / 7);
+    if (goal === 'cut') {
+      label.textContent = `${rate.toFixed(2)} kg / week (-${delta} kcal)`;
+    } else {
+      label.textContent = `${rate.toFixed(2)} kg / week (+${delta} kcal)`;
+    }
+  }
+}
+
+function deriveMacrosForTarget(goal, targetCals) {
+  const latestWt = currentCoaching?.trend_weight_kg || Number($('calc-wt')?.value) || 75;
+  const protPerKg = goal === 'cut' ? 2.0 : 1.8;
+  const pro = Math.round(latestWt * protPerKg);
+  const fat = Math.round((targetCals * 0.25) / 9);
+  const car = Math.round(Math.max(0, targetCals - (pro * 4 + fat * 9)) / 4);
+  return { pro, car, fat };
+}
+
+// Check-in card actions
+$('btn-apply-checkin')?.addEventListener('click', async () => {
+  try {
+    const res = await postJSON('/api/coaching/checkin', { action: 'apply' });
+    toast(`Weekly targets adjusted to ${fmt(res.new_targets.calories)} kcal!`);
+    $('coaching-card')?.classList.add('hidden');
+    await loadDay();
+    await loadChart();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+$('btn-skip-checkin')?.addEventListener('click', async () => {
+  try {
+    await postJSON('/api/coaching/checkin', { action: 'skip' });
+    toast('Targets kept as-is for this week.');
+    $('coaching-card')?.classList.add('hidden');
+    await loadCoaching();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+$('btn-open-coach-settings')?.addEventListener('click', () => {
+  if (currentProfile) {
+    fillTargetsModal({
+      calorie_target: currentProfile.calorie_target,
+      protein_target: currentProfile.protein_target,
+      carbs_target: currentProfile.carbs_target,
+      fat_target: currentProfile.fat_target,
+    });
+  }
+  openModal('targets-modal');
+  if (currentCoaching) fillCoachingInModal(currentCoaching);
+});
+
+// Goal switcher in modal (Cut / Maintain / Bulk)
+document.querySelectorAll('#goal-switcher-row .preset-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#goal-switcher-row .preset-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     const goal = btn.dataset.goal;
-    let target = currentBaseTDEE;
-    if (goal === 'cut') target = Math.max(1200, currentBaseTDEE - 500);
-    else if (goal === 'bulk') target = currentBaseTDEE + 300;
+    const rate = Number($('goal-rate-slider')?.value || 0.5);
+    updateGoalRateDisplay(goal, rate);
+
+    const baseTDEE = currentCoaching?.estimated_tdee || currentBaseTDEE || 2200;
+    let target = baseTDEE;
+    if (goal === 'cut') target = Math.max(1200, baseTDEE - Math.round((rate * 7700) / 7));
+    else if (goal === 'bulk') target = baseTDEE + Math.round((rate * 7700) / 7);
 
     $('modal-t-cal').value = target;
-    // Derive recommended 30P / 45C / 25F split
-    $('modal-t-pro').value = Math.round((target * 0.30) / 4);
-    $('modal-t-car').value = Math.round((target * 0.45) / 4);
-    $('modal-t-fat').value = Math.round((target * 0.25) / 9);
+    const { pro, car, fat } = deriveMacrosForTarget(goal, target);
+    $('modal-t-pro').value = pro;
+    $('modal-t-car').value = car;
+    $('modal-t-fat').value = fat;
   });
 });
 
-// TDEE Formula Calculation
+// Goal rate slider in modal
+$('goal-rate-slider')?.addEventListener('input', (e) => {
+  const goal = document.querySelector('#goal-switcher-row .preset-btn.active')?.dataset.goal || 'cut';
+  const rate = Number(e.target.value);
+  updateGoalRateDisplay(goal, rate);
+
+  const baseTDEE = currentCoaching?.estimated_tdee || currentBaseTDEE || 2200;
+  let target = baseTDEE;
+  if (goal === 'cut') target = Math.max(1200, baseTDEE - Math.round((rate * 7700) / 7));
+  else if (goal === 'bulk') target = baseTDEE + Math.round((rate * 7700) / 7);
+
+  $('modal-t-cal').value = target;
+  const { pro, car, fat } = deriveMacrosForTarget(goal, target);
+  $('modal-t-pro').value = pro;
+  $('modal-t-car').value = car;
+  $('modal-t-fat').value = fat;
+});
+
+// Check-In Now button in modal
+$('btn-trigger-checkin-now')?.addEventListener('click', async () => {
+  try {
+    const res = await postJSON('/api/coaching/checkin', { action: 'apply' });
+    toast(`Check-in complete! Targets set to ${fmt(res.new_targets.calories)} kcal`);
+    closeModal('targets-modal');
+    await loadDay();
+    await loadChart();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+// Formula calculation fallback
 $('btn-apply-calc')?.addEventListener('click', () => {
   const wt = Number($('calc-wt').value) || 75;
   const ht = Number($('calc-ht').value) || 178;
   const age = Number($('calc-age').value) || 30;
   const act = Number($('calc-act').value) || 1.375;
 
-  // Mifflin-St Jeor Formula
   const bmr = (10 * wt) + (6.25 * ht) - (5 * age) + 5;
   currentBaseTDEE = Math.round(bmr * act);
 
-  const activePreset = document.querySelector('.preset-btn.active')?.dataset.goal || 'maintain';
+  const activeGoal = document.querySelector('#goal-switcher-row .preset-btn.active')?.dataset.goal || 'cut';
+  const rate = Number($('goal-rate-slider')?.value || 0.5);
   let target = currentBaseTDEE;
-  if (activePreset === 'cut') target = Math.max(1200, currentBaseTDEE - 500);
-  else if (activePreset === 'bulk') target = currentBaseTDEE + 300;
+  if (activeGoal === 'cut') target = Math.max(1200, currentBaseTDEE - Math.round((rate * 7700) / 7));
+  else if (activeGoal === 'bulk') target = currentBaseTDEE + Math.round((rate * 7700) / 7);
 
   $('modal-t-cal').value = target;
-  $('modal-t-pro').value = Math.round((target * 0.30) / 4);
-  $('modal-t-car').value = Math.round((target * 0.45) / 4);
-  $('modal-t-fat').value = Math.round((target * 0.25) / 9);
+  const { pro, car, fat } = deriveMacrosForTarget(activeGoal, target);
+  $('modal-t-pro').value = pro;
+  $('modal-t-car').value = car;
+  $('modal-t-fat').value = fat;
 
-  toast(`Calculated TDEE: ${currentBaseTDEE} kcal`);
+  toast(`Calculated baseline TDEE: ${currentBaseTDEE} kcal`);
 });
 
-// Target Submission
+// Target Submission & Coaching Sync
 $('targets-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
+    const cals = Number($('modal-t-cal').value) || 0;
+    const pro = Number($('modal-t-pro').value) || 0;
+    const car = Number($('modal-t-car').value) || 0;
+    const fat = Number($('modal-t-fat').value) || 0;
+
     await putJSON('/api/settings', {
-      calorie_target: Number($('modal-t-cal').value) || 0,
-      protein_target: Number($('modal-t-pro').value) || 0,
-      carbs_target: Number($('modal-t-car').value) || 0,
-      fat_target: Number($('modal-t-fat').value) || 0,
+      calorie_target: cals,
+      protein_target: pro,
+      carbs_target: car,
+      fat_target: fat,
     });
+
+    const activeGoal = document.querySelector('#goal-switcher-row .preset-btn.active')?.dataset.goal || 'cut';
+    const rate = Number($('goal-rate-slider')?.value || 0.5);
+    const mode = $('coach-mode-select')?.value || 'coached';
+    const paused = $('coach-pause-toggle')?.checked || false;
+
+    await patchJSON('/api/coaching/settings', {
+      goal: activeGoal,
+      goal_rate_kg_per_week: rate,
+      coaching_mode: mode,
+      coaching_paused: paused,
+    });
+
     closeModal('targets-modal');
-    toast('Goal targets updated');
+    toast('Goals & coaching settings updated');
     await loadProfiles();
     await loadDay();
     await loadChart();

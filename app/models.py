@@ -163,3 +163,18 @@ class WeekPlanRerollDayIn(BaseModel):
     week_start: str | None = None
 
 
+class CoachingCheckinIn(BaseModel):
+    action: Literal["apply", "skip", "customize"] = "apply"
+    custom_calories: float | None = Field(default=None, ge=1000, le=10000)
+    goal: Literal["cut", "maintain", "bulk", "lose", "gain"] | None = None
+    goal_rate_kg_per_week: float | None = Field(default=None, ge=0.0, le=2.0)
+
+
+class CoachingSettingsUpdate(BaseModel):
+    coaching_mode: Literal["coached", "autonomous", "manual"] | None = None
+    coaching_paused: bool | None = None
+    goal: Literal["cut", "maintain", "bulk", "lose", "gain"] | None = None
+    goal_rate_kg_per_week: float | None = Field(default=None, ge=0.0, le=2.0)
+
+
+

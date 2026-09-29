@@ -51,6 +51,43 @@
     <button type="button" id="btn-start-onboarding" class="btn btn-primary" style="padding:6px 14px;font-size:12.5px;white-space:nowrap">Start Setup</button>
   </div>
 
+  <!-- Weekly Adaptive Coaching Check-In Card -->
+  <div id="coaching-card" class="card hidden" style="border:1px solid rgba(59,130,246,0.35);background:linear-gradient(180deg, rgba(59,130,246,0.08) 0%, var(--surface) 100%);margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:16px">🧠</span>
+        <h3 style="font-size:14px;margin:0;font-weight:700">Adaptive Check-In</h3>
+      </div>
+      <span id="coaching-goal-chip" class="chip" style="background:var(--accent);color:#fff;font-size:11px;padding:2px 8px;font-weight:600">✂️ Cut: -0.5 kg/wk</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0;font-size:11.5px;color:var(--muted)">
+      <div style="background:var(--surface-2);padding:6px 8px;border-radius:6px">
+        <span>Est. Expenditure:</span> <strong id="coaching-est-tdee" style="color:var(--text)">-- kcal</strong>
+      </div>
+      <div style="background:var(--surface-2);padding:6px 8px;border-radius:6px">
+        <span>Trend Weight:</span> <strong id="coaching-trend-weight" style="color:var(--text)">-- kg</strong>
+      </div>
+    </div>
+
+    <div style="background:var(--surface-2);border-radius:8px;padding:10px;margin-bottom:10px;font-size:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-weight:600">Recommended Target:</span>
+        <span id="coaching-rec-cal" style="font-size:15px;font-weight:700;color:var(--accent)">-- kcal</span>
+      </div>
+      <div id="coaching-rec-macros" style="font-size:11px;color:var(--muted);margin-bottom:4px">
+        P: --g &middot; C: --g &middot; F: --g
+      </div>
+      <p id="coaching-reasoning" style="font-size:11.5px;color:var(--text);margin:6px 0 0;line-height:1.35;opacity:.9"></p>
+    </div>
+
+    <div class="btn-row" style="gap:8px">
+      <button type="button" id="btn-apply-checkin" class="btn btn-primary" style="flex:2;font-size:12.5px;padding:8px">Apply Adjustment</button>
+      <button type="button" id="btn-skip-checkin" class="btn" style="flex:1;font-size:12.5px;padding:8px">Keep Current</button>
+      <button type="button" id="btn-open-coach-settings" class="btn" style="flex:none;font-size:14px;padding:8px 10px" title="Coaching Settings">⚙️</button>
+    </div>
+  </div>
+
   <section class="card">
     <div style="display:flex;align-items:center;justify-content:space-between">
       <h2>Calories</h2>
@@ -597,12 +634,48 @@
       </button>
     </div>
 
-    <!-- Quick Goal Presets -->
-    <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Goal Preset</div>
-    <div class="presets-row">
-      <button type="button" class="preset-btn" data-goal="cut">Fat Loss (-500)</button>
-      <button type="button" class="preset-btn active" data-goal="maintain">Maintain</button>
-      <button type="button" class="preset-btn" data-goal="bulk">Muscle (+300)</button>
+    <!-- Goal Switcher (Cut / Maintain / Bulk) -->
+    <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Active Goal &amp; Strategy</div>
+    <div class="presets-row" id="goal-switcher-row">
+      <button type="button" class="preset-btn active" data-goal="cut">✂️ Cut</button>
+      <button type="button" class="preset-btn" data-goal="maintain">⚖️ Maintain</button>
+      <button type="button" class="preset-btn" data-goal="bulk">📈 Bulk</button>
+    </div>
+
+    <!-- Target Pace / Rate selector -->
+    <div id="goal-rate-box" style="background:var(--surface-2);border-radius:8px;padding:8px 10px;margin-bottom:12px;font-size:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-weight:600">Target Pace:</span>
+        <span id="goal-rate-label" style="font-weight:700;color:var(--accent)">0.50 kg / week (-550 kcal)</span>
+      </div>
+      <input type="range" id="goal-rate-slider" min="0.1" max="1.0" step="0.05" value="0.5" style="width:100%;accent-color:var(--accent);cursor:pointer">
+    </div>
+
+    <!-- Adaptive Coaching Settings Card -->
+    <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:12.5px;font-weight:700;color:var(--text)">🧠 Adaptive TDEE Engine</span>
+        <span id="modal-coaching-status-badge" class="chip" style="font-size:10px;padding:1px 6px">Active</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11.5px;color:var(--muted);margin-bottom:8px">
+        <div>Est. Expenditure: <strong id="modal-est-tdee" style="color:var(--text)">-- kcal</strong></div>
+        <div>Trend Pace: <strong id="modal-trend-pace" style="color:var(--text)">-- kg/wk</strong></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+        <div style="flex:1">
+          <label for="coach-mode-select" style="font-size:10.5px;color:var(--muted);display:block;margin-bottom:2px">Coaching Mode</label>
+          <select id="coach-mode-select" style="width:100%;height:32px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:6px;font-size:11.5px">
+            <option value="coached">Coached (Weekly Prompt)</option>
+            <option value="autonomous">Autonomous (Auto-update)</option>
+            <option value="manual">Manual (No auto-adjust)</option>
+          </select>
+        </div>
+        <button type="button" id="btn-trigger-checkin-now" class="btn" style="height:32px;margin-top:14px;font-size:11.5px;padding:0 10px;white-space:nowrap">Check-In Now</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px">
+        <input type="checkbox" id="coach-pause-toggle" style="accent-color:var(--accent);cursor:pointer">
+        <label for="coach-pause-toggle" style="cursor:pointer;font-size:11.5px;color:var(--muted)">Pause adaptive adjustments (vacation / diet break)</label>
+      </div>
     </div>
 
     <!-- TDEE Calculator (Optional/Expandable) -->
@@ -747,6 +820,6 @@
   <a href="/capture"><svg viewBox="0 0 24 24"><path d="M3 8h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13" r="3.6"/></svg>Capture</a>
   <a href="/progress"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M13 16V8M18 16v-3"/></svg>Progress</a>
 </nav>
-<script type="module" src="/static/js/dashboard.js?v=20260929"></script>
+<script type="module" src="/static/js/dashboard.js?v=20260929_coaching"></script>
 </body>
 </html>

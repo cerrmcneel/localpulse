@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import auth, config
 from app.db import init_db
-from app.routers import backup, knowledge, meals, photos, profiles, stats, weights, workouts
+from app.routers import backup, coaching, knowledge, meals, photos, profiles, stats, weights, workouts
 from app.services import images
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -68,6 +68,7 @@ app.include_router(profiles.router)
 app.include_router(weights.router)
 app.include_router(knowledge.router)
 app.include_router(workouts.router)
+app.include_router(coaching.router)
 app.include_router(backup.router)
 
 
