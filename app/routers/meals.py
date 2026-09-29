@@ -236,8 +236,9 @@ def _insert_items(conn, meal_id: int, items) -> None:
                (meal_id, name, grams, calories, protein_g, carbs_g, fat_g, confidence, position)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [
-            (meal_id, it.name, it.grams, it.calories, it.protein_g,
-             it.carbs_g, it.fat_g, it.confidence, pos)
+            (meal_id, it.name, round(float(it.grams), 1), round(float(it.calories), 1),
+             round(float(it.protein_g), 1), round(float(it.carbs_g), 1), round(float(it.fat_g), 1),
+             it.confidence, pos)
             for pos, it in enumerate(items)
         ],
     )

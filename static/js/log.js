@@ -203,7 +203,7 @@ function renderItems() {
         ${FIELDS.map(([field, label]) => `
           <div>
             <label>${label}</label>
-            <input type="number" inputmode="decimal" step="0.1" min="0"
+            <input type="number" inputmode="decimal" step="any" min="0"
                    data-field="${field}" value="${round(item[field], 1)}" aria-label="${label}">
           </div>`).join('')}
       </div>

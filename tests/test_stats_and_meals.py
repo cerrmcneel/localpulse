@@ -196,6 +196,51 @@ def test_move_meal_to_past_day_via_patch(client, second_profile):
     assert any(m["id"] == meal["id"] for m in yest_meals["meals"])
 
 
+def test_meal_with_floats_logging_duplicating_and_updating(client, second_profile):
+    """Meals with float macros (e.g. from AI estimates) can be logged, duplicated, and patched."""
+    headers = {"X-Profile-ID": str(second_profile["id"])}
+    today = config.now().date().isoformat()
+
+    # 1. Create meal with float macros
+    res = client.post("/api/meals", json={
+        "name": "AI Protein Bowl",
+        "meal_type": "lunch",
+        "items": [
+            {"name": "Chicken & Rice", "grams": 175.5, "calories": 345.8, "protein_g": 31.4, "carbs_g": 35.6, "fat_g": 7.2},
+        ],
+    }, headers=headers)
+    assert res.status_code == 201
+    meal = res.json()
+    item = meal["items"][0]
+    assert item["grams"] == pytest.approx(175.5)
+    assert item["calories"] == pytest.approx(345.8)
+    assert item["protein_g"] == pytest.approx(31.4)
+    assert item["carbs_g"] == pytest.approx(35.6)
+    assert item["fat_g"] == pytest.approx(7.2)
+
+    # 2. Duplicate meal with floats
+    dup_res = client.post(f"/api/meals/{meal['id']}/duplicate", json={}, headers=headers)
+    assert dup_res.status_code == 201
+    dup_meal = dup_res.json()
+    dup_item = dup_meal["items"][0]
+    assert dup_item["protein_g"] == pytest.approx(31.4)
+    assert dup_item["calories"] == pytest.approx(345.8)
+
+    # 3. Update (edit) duplicated meal with user-adjusted float macros
+    patch_res = client.patch(f"/api/meals/{dup_meal['id']}", json={
+        "items": [
+            {"name": "Chicken & Rice (larger)", "grams": 220.5, "calories": 435.5, "protein_g": 39.5, "carbs_g": 44.8, "fat_g": 9.1},
+        ],
+    }, headers=headers)
+    assert patch_res.status_code == 200
+    patched_meal = patch_res.json()
+    patched_item = patched_meal["items"][0]
+    assert patched_item["grams"] == pytest.approx(220.5)
+    assert patched_item["calories"] == pytest.approx(435.5)
+    assert patched_item["protein_g"] == pytest.approx(39.5)
+
+
+
 # --- workouts: day filtering and the local-time week window ---
 
 def test_workout_list_can_be_filtered_to_a_single_day(client, second_profile):

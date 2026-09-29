@@ -1,5 +1,5 @@
 import {
-  getJSON, postJSON, postForm, putJSON, patchJSON, del, fmt, pct, prettyDate, shiftDay, todayISO,
+  getJSON, postJSON, postForm, putJSON, patchJSON, del, fmt, pct, round, prettyDate, shiftDay, todayISO,
   toast, esc, checkHealth, getActiveProfileId, setActiveProfileId, getFoodIcon,
   getProfileToken, setProfileToken, clearProfileToken,
 } from './api.js';
@@ -1019,11 +1019,11 @@ function openEditMealModal(meal) {
           <input type="text" class="it-name" value="${esc(it.name)}" placeholder="Item name" required style="flex:1">
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:4px">
-          <div><label style="font-size:10px">Grams</label><input type="number" class="it-g" value="${it.grams || 0}" min="0"></div>
-          <div><label style="font-size:10px">Calories</label><input type="number" class="it-cal" value="${it.calories || 0}" min="0"></div>
-          <div><label style="font-size:10px">Prot (g)</label><input type="number" class="it-p" value="${it.protein_g || 0}" min="0"></div>
-          <div><label style="font-size:10px">Carb (g)</label><input type="number" class="it-c" value="${it.carbs_g || 0}" min="0"></div>
-          <div><label style="font-size:10px">Fat (g)</label><input type="number" class="it-f" value="${it.fat_g || 0}" min="0"></div>
+          <div><label style="font-size:10px">Grams</label><input type="number" inputmode="decimal" step="any" class="it-g" value="${round(it.grams || 0, 1)}" min="0"></div>
+          <div><label style="font-size:10px">Calories</label><input type="number" inputmode="decimal" step="any" class="it-cal" value="${round(it.calories || 0, 1)}" min="0"></div>
+          <div><label style="font-size:10px">Prot (g)</label><input type="number" inputmode="decimal" step="any" class="it-p" value="${round(it.protein_g || 0, 1)}" min="0"></div>
+          <div><label style="font-size:10px">Carb (g)</label><input type="number" inputmode="decimal" step="any" class="it-c" value="${round(it.carbs_g || 0, 1)}" min="0"></div>
+          <div><label style="font-size:10px">Fat (g)</label><input type="number" inputmode="decimal" step="any" class="it-f" value="${round(it.fat_g || 0, 1)}" min="0"></div>
         </div>
       </div>
     `).join('')}
@@ -1043,11 +1043,11 @@ $('edit-meal-form')?.addEventListener('submit', async (e) => {
   const itemRows = document.querySelectorAll('.edit-item-row');
   const items = Array.from(itemRows).map((row) => ({
     name: row.querySelector('.it-name').value.trim() || 'Item',
-    grams: Number(row.querySelector('.it-g').value) || 0,
-    calories: Number(row.querySelector('.it-cal').value) || 0,
-    protein_g: Number(row.querySelector('.it-p').value) || 0,
-    carbs_g: Number(row.querySelector('.it-c').value) || 0,
-    fat_g: Number(row.querySelector('.it-f')?.value) || 0,
+    grams: round(Number(row.querySelector('.it-g')?.value) || 0, 1),
+    calories: round(Number(row.querySelector('.it-cal')?.value) || 0, 1),
+    protein_g: round(Number(row.querySelector('.it-p')?.value) || 0, 1),
+    carbs_g: round(Number(row.querySelector('.it-c')?.value) || 0, 1),
+    fat_g: round(Number(row.querySelector('.it-f')?.value) || 0, 1),
     confidence: 'high',
   }));
 
