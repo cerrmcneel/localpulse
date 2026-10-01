@@ -69,19 +69,48 @@ for (const id of ['file', 'file-lib']) {
       selectedFile = file;
       if (previewURL) URL.revokeObjectURL(previewURL);
       previewURL = URL.createObjectURL(file);
-      $('intake-photo-thumb').src = previewURL;
-      $('intake-photo-box').classList.remove('hidden');
-      $('photo-btns-row').classList.add('hidden');
+      const thumb = $('intake-photo-thumb');
+      const fallback = $('intake-photo-fallback');
+      if (thumb) {
+        thumb.style.display = 'block';
+        thumb.src = previewURL;
+      }
+      if (fallback) fallback.classList.add('hidden');
+      $('intake-photo-box')?.classList.remove('hidden');
+      $('photo-btns-row')?.classList.add('hidden');
     }
   });
 }
+
+$('intake-photo-thumb')?.addEventListener('error', () => {
+  const thumb = $('intake-photo-thumb');
+  const fallback = $('intake-photo-fallback');
+  if (thumb && fallback && selectedFile) {
+    thumb.style.display = 'none';
+    fallback.classList.remove('hidden');
+    const nameEl = $('intake-fallback-name');
+    const infoEl = $('intake-fallback-info');
+    if (nameEl) nameEl.textContent = selectedFile.name || 'Photo selected';
+    if (infoEl) {
+      const mb = (selectedFile.size / (1024 * 1024)).toFixed(1);
+      infoEl.textContent = `${mb} MB · Ready for AI macro estimation (auto-converted to JPEG on upload)`;
+    }
+  }
+});
 
 $('btn-remove-photo')?.addEventListener('click', () => {
   selectedFile = null;
   if (previewURL) URL.revokeObjectURL(previewURL);
   previewURL = null;
-  $('intake-photo-box').classList.add('hidden');
-  $('photo-btns-row').classList.remove('hidden');
+  const thumb = $('intake-photo-thumb');
+  const fallback = $('intake-photo-fallback');
+  if (thumb) {
+    thumb.src = '';
+    thumb.style.display = 'block';
+  }
+  if (fallback) fallback.classList.add('hidden');
+  $('intake-photo-box')?.classList.add('hidden');
+  $('photo-btns-row')?.classList.remove('hidden');
 });
 
 $('btn-manual')?.addEventListener('click', () => {
@@ -135,7 +164,10 @@ async function runAnalysis(file, text) {
     $('meal-name').value = draft.name;
     if ($('meal-type')) $('meal-type').value = inferMealType();
 
-    if (file && previewURL) {
+    if (result.pending_image) {
+      $('preview').src = `/media/${result.pending_image}`;
+      $('preview').classList.remove('hidden');
+    } else if (file && previewURL) {
       $('preview').src = previewURL;
       $('preview').classList.remove('hidden');
     } else {

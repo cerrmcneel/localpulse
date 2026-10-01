@@ -7,6 +7,12 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except ImportError:
+    pass
+
 from app import config
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -31,7 +37,10 @@ def open_image(raw: bytes) -> Image.Image:
         img = Image.open(io.BytesIO(raw))
         img.load()
     except Exception as exc:
-        raise ImageError(f"Not a readable image: {exc}") from exc
+        msg = str(exc)
+        if "cannot identify image file" in msg:
+            raise ImageError("Unsupported or unreadable image format. Please ensure your photo is a standard image (JPEG, PNG, HEIC, or WebP).") from exc
+        raise ImageError(f"Not a readable image: {msg}") from exc
     img = ImageOps.exif_transpose(img)
     return img.convert("RGB")
 

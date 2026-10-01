@@ -240,6 +240,33 @@ def test_meal_with_floats_logging_duplicating_and_updating(client, second_profil
     assert patched_item["protein_g"] == pytest.approx(39.5)
 
 
+def test_open_image_supports_jpeg_and_heif():
+    """Images service accepts standard JPEGs and phone HEIC/HEIF photos."""
+    import io
+    from PIL import Image
+    import pillow_heif
+    from app.services.images import open_image, ImageError
+
+    # JPEG
+    buf_jpeg = io.BytesIO()
+    Image.new("RGB", (80, 80), color="blue").save(buf_jpeg, format="JPEG")
+    img_from_jpeg = open_image(buf_jpeg.getvalue())
+    assert img_from_jpeg.size == (80, 80)
+    assert img_from_jpeg.mode == "RGB"
+
+    # HEIF / HEIC
+    buf_heif = io.BytesIO()
+    pillow_heif.from_pillow(Image.new("RGB", (70, 70), color="red")).save(buf_heif)
+    img_from_heif = open_image(buf_heif.getvalue())
+    assert img_from_heif.size == (70, 70)
+    assert img_from_heif.mode == "RGB"
+
+    # Corrupted / invalid bytes
+    with pytest.raises(ImageError, match="Unsupported or unreadable"):
+        open_image(b"not an image at all")
+
+
+
 
 # --- workouts: day filtering and the local-time week window ---
 
