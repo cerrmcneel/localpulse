@@ -47,15 +47,15 @@ if (-not $lanOk) {
     }
 }
 
-Write-Host "Syncing app and static to $HostIP..."
-scp -o BatchMode=yes -o ConnectTimeout=10 -r app static "${User}@${HostIP}:~/fitness-tracker/"
+Write-Host "Syncing app, static, and requirements.txt to $HostIP..."
+scp -o BatchMode=yes -o ConnectTimeout=10 -r app static requirements.txt "${User}@${HostIP}:~/fitness-tracker/"
 if ($LASTEXITCODE -ne 0) {
     Write-Error "SCP failed."
     exit $LASTEXITCODE
 }
 
 Write-Host "Setting file permissions on $HostIP..."
-ssh -o BatchMode=yes -o ConnectTimeout=10 "${User}@${HostIP}" "chmod -R a+rX ~/fitness-tracker/app ~/fitness-tracker/static"
+ssh -o BatchMode=yes -o ConnectTimeout=10 "${User}@${HostIP}" "chmod -R a+rX ~/fitness-tracker/app ~/fitness-tracker/static ~/fitness-tracker/requirements.txt"
 
 Write-Host "Rebuilding and restarting container on $HostIP..."
 ssh -o BatchMode=yes -o ConnectTimeout=10 "${User}@${HostIP}" "cd ~/fitness-tracker && docker compose build tracker && docker compose up -d tracker"
