@@ -59,6 +59,18 @@ def calculate_adaptive_coaching(conn, profile_id: int, as_of: date | None = None
         ).fetchall()
     }
 
+    # 2.1 Fetch daily activity data over the last 21 days
+    activity_rows = conn.execute(
+        """SELECT day, steps, active_calories FROM daily_activities
+           WHERE profile_id = ? AND day BETWEEN ? AND ?
+           ORDER BY day ASC""",
+        (profile_id, start_21d, as_of_iso),
+    ).fetchall()
+
+    act_14d = [r for r in activity_rows if r["day"] >= start_14d and (r["steps"] > 0 or r["active_calories"] > 0)]
+    avg_steps_14d = round(sum(r["steps"] for r in act_14d) / len(act_14d)) if act_14d else 0
+    avg_active_burn_14d = round(sum(r["active_calories"] for r in act_14d) / len(act_14d), 1) if act_14d else 0.0
+
     # Count data density
     weigh_ins_7d = sum(1 for r in weight_rows if r["day"] >= start_7d)
     weigh_ins_14d = sum(1 for r in weight_rows if r["day"] >= start_14d)
@@ -80,6 +92,10 @@ def calculate_adaptive_coaching(conn, profile_id: int, as_of: date | None = None
 
     bmr = compute_bmr(sex, latest_weight, height_cm, age)
     baseline_tdee = round(compute_tdee(bmr, act_level))
+
+    # Activity-informed expenditure estimate (BMR + measured burn + TEF)
+    measured_burn = avg_active_burn_14d if avg_active_burn_14d > 50 else (avg_steps_14d * 0.04)
+    activity_tdee = round(bmr + measured_burn + (avg_intake_14d * 0.10 if 'avg_intake_14d' in locals() else bmr * 0.10))
 
     # 4. Weight Trend & Rate of Change (Linear Regression on 14-day window)
     weights_14d = [r for r in weight_rows if r["day"] >= start_14d]
@@ -121,6 +137,9 @@ def calculate_adaptive_coaching(conn, profile_id: int, as_of: date | None = None
     ]
     avg_intake_7d = round(sum(cals_7d) / len(cals_7d)) if cals_7d else avg_intake_14d
 
+    # Re-evaluate activity TDEE now that avg_intake_14d is resolved
+    activity_tdee = round(bmr + measured_burn + (avg_intake_14d * 0.10))
+
     if has_sufficient_data:
         # Energy deficit or surplus reflected by weight trend:
         # 1 kg fat/tissue loss/gain = ~7,700 kcal
@@ -132,11 +151,16 @@ def calculate_adaptive_coaching(conn, profile_id: int, as_of: date | None = None
 
         # Confidence blending: more logged days = higher trust in empirical data vs formula
         conf_ratio = min(1.0, (days_logged_14d / 10.0) * (weigh_ins_14d / 6.0))
-        estimated_tdee = round(conf_ratio * raw_adaptive_tdee + (1.0 - conf_ratio) * baseline_tdee)
+        refined_baseline = round(0.5 * baseline_tdee + 0.5 * activity_tdee) if (avg_steps_14d > 0 or avg_active_burn_14d > 0) else baseline_tdee
+        estimated_tdee = round(conf_ratio * raw_adaptive_tdee + (1.0 - conf_ratio) * refined_baseline)
         confidence = "high" if conf_ratio >= 0.75 else "medium"
     else:
-        estimated_tdee = baseline_tdee
-        confidence = "insufficient_data"
+        if (avg_steps_14d > 0 or avg_active_burn_14d > 0) and len(act_14d) >= 3:
+            estimated_tdee = round(0.4 * baseline_tdee + 0.6 * activity_tdee)
+            confidence = "activity_estimated"
+        else:
+            estimated_tdee = baseline_tdee
+            confidence = "insufficient_data"
 
     # 6. Recommendation based on Goal
     raw_goal = (prof.get("goal") or "cut").strip().lower()
@@ -221,18 +245,19 @@ def calculate_adaptive_coaching(conn, profile_id: int, as_of: date | None = None
     # Explanatory summary for the user
     delta_int = round(new_calories - current_calories)
     sign = "+" if delta_int > 0 else ""
+    act_desc = f" Active movement: avg {avg_steps_14d:,} steps/day (~{round(avg_active_burn_14d)} kcal/day)." if avg_steps_14d > 0 else ""
     if has_sufficient_data:
         trend_desc = f"{'+' if rate_kg_per_week > 0 else ''}{rate_kg_per_week} kg/wk"
         reasoning = (
             f"Over the last 14 days, you logged {days_logged_14d} days of nutrition (avg {avg_intake_14d} kcal) "
-            f"and {weigh_ins_14d} weigh-ins (trend pace: {trend_desc}). "
+            f"and {weigh_ins_14d} weigh-ins (trend pace: {trend_desc}).{act_desc} "
             f"Your estimated expenditure is ~{estimated_tdee} kcal/day. "
             f"To target your {goal_rate} kg/wk {goal}, we recommend an adjustment of {sign}{delta_int} kcal."
         )
     else:
         reasoning = (
-            f"Logged {days_logged_7d}/7 food days and {weigh_ins_7d}/7 weigh-ins this week. "
-            f"Using baseline expenditure (~{baseline_tdee} kcal) until more data is logged. "
+            f"Logged {days_logged_7d}/7 food days and {weigh_ins_7d}/7 weigh-ins this week.{act_desc} "
+            f"Using baseline expenditure (~{estimated_tdee} kcal) until more trend data is logged. "
             f"Recommended target is {new_calories} kcal ({sign}{delta_int} kcal)."
         )
 
@@ -251,6 +276,8 @@ def calculate_adaptive_coaching(conn, profile_id: int, as_of: date | None = None
         "baseline_tdee": baseline_tdee,
         "avg_intake_7d": avg_intake_7d,
         "avg_intake_14d": avg_intake_14d,
+        "avg_steps_14d": avg_steps_14d,
+        "avg_active_burn_14d": avg_active_burn_14d,
         "trend_weight_kg": trend_weight_kg,
         "rate_kg_per_week": rate_kg_per_week,
         "days_logged_7d": days_logged_7d,

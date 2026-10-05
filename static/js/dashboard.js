@@ -303,6 +303,7 @@ function openEditProfileModal(pid) {
     opt.classList.toggle('selected', isSelected);
   });
 
+  loadIntegrationConfig();
   openModal('edit-profile-modal');
 }
 
@@ -803,6 +804,7 @@ async function loadDay() {
   ]);
 
   renderTotals(stats);
+  renderActivity(stats.activity);
   renderMeals(meals.meals);
 
   const logLink = $('btn-log-meal-link');
@@ -921,6 +923,158 @@ function renderTotals({ totals, targets, remaining }) {
     $(`${key}-bar`).style.width = pct(totals[`${key}_g`], targets[target]) + '%';
   }
 }
+
+let currentDayActivity = null;
+
+async function loadIntegrationConfig() {
+  try {
+    const cfg = await getJSON('/api/integrations/config');
+    const urlInput = $('sync-webhook-url');
+    const keyInput = $('sync-api-key');
+    const guideUrl = $('guide-webhook-url');
+    if (urlInput) urlInput.value = cfg.webhook_url || '';
+    if (keyInput) keyInput.value = cfg.api_key || '';
+    if (guideUrl) guideUrl.textContent = cfg.webhook_url || '';
+  } catch (err) {
+    console.error('Failed to load integration config:', err);
+  }
+}
+
+function renderActivity(activity) {
+  currentDayActivity = activity || null;
+  const stepsEl = $('act-steps');
+  const burnEl = $('act-burn');
+  const distEl = $('act-distance');
+  const barEl = $('act-steps-bar');
+  const badgeEl = $('act-source-badge');
+
+  if (!activity || (!activity.steps && !activity.active_calories)) {
+    if (stepsEl) stepsEl.textContent = '0';
+    if (burnEl) burnEl.textContent = '0';
+    if (distEl) distEl.textContent = '— km';
+    if (barEl) barEl.style.width = '0%';
+    if (badgeEl) badgeEl.textContent = 'No activity logged for this day';
+    return;
+  }
+
+  const steps = activity.steps || 0;
+  const burn = Math.round(activity.active_calories || 0);
+  const distKm = activity.distance_m ? (activity.distance_m / 1000).toFixed(1) : (steps * 0.00075).toFixed(1);
+
+  if (stepsEl) stepsEl.textContent = steps.toLocaleString();
+  if (burnEl) burnEl.textContent = burn.toLocaleString();
+  if (distEl) distEl.textContent = `${distKm} km`;
+
+  const stepGoal = 10000;
+  const stepPct = Math.min(100, Math.round((steps / stepGoal) * 100));
+  if (barEl) {
+    barEl.style.width = `${stepPct}%`;
+  }
+
+  if (badgeEl) {
+    const srcMap = {
+      google_fit: 'Google Fit',
+      health_connect: 'Health Connect',
+      manual: 'Manual entry',
+      test_ping: 'Test ping',
+    };
+    const srcName = srcMap[activity.source] || activity.source || 'Mobile sync';
+    const timeStr = activity.updated_at ? new Date(activity.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    badgeEl.innerHTML = `<span>✓ Synced via <strong>${esc(srcName)}</strong>${timeStr ? ` at ${timeStr}` : ''}</span>`;
+  }
+}
+
+// Activity modal & mobile sync handlers
+$('btn-log-activity')?.addEventListener('click', () => {
+  $('act-steps-input').value = currentDayActivity?.steps || '';
+  $('act-cals-input').value = currentDayActivity?.active_calories || '';
+  $('act-dist-input').value = currentDayActivity?.distance_m ? (currentDayActivity.distance_m / 1000).toFixed(1) : '';
+  openModal('activity-modal');
+  $('act-steps-input')?.focus();
+});
+
+$('activity-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const steps = Number($('act-steps-input').value) || 0;
+  const active_calories = Number($('act-cals-input').value) || 0;
+  const distKm = Number($('act-dist-input').value) || 0;
+  const distance_m = distKm * 1000;
+
+  try {
+    await postJSON('/api/integrations/manual', {
+      day,
+      steps,
+      active_calories,
+      distance_m,
+    });
+    toast('Daily activity saved');
+    closeModal('activity-modal');
+    await loadDay();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+$('btn-quick-sync-info')?.addEventListener('click', () => {
+  loadIntegrationConfig();
+  openModal('sync-guide-modal');
+});
+
+$('btn-open-sync-guide')?.addEventListener('click', () => {
+  loadIntegrationConfig();
+  openModal('sync-guide-modal');
+});
+
+$('btn-copy-webhook')?.addEventListener('click', () => {
+  const url = $('sync-webhook-url')?.value;
+  if (url && navigator.clipboard) {
+    navigator.clipboard.writeText(url);
+    toast('Webhook URL copied to clipboard');
+  }
+});
+
+$('btn-copy-key')?.addEventListener('click', () => {
+  const key = $('sync-api-key')?.value;
+  if (key && navigator.clipboard) {
+    navigator.clipboard.writeText(key);
+    toast('API Key copied to clipboard');
+  }
+});
+
+$('btn-toggle-key-vis')?.addEventListener('click', () => {
+  const input = $('sync-api-key');
+  const btn = $('btn-toggle-key-vis');
+  if (!input || !btn) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = 'Hide';
+  } else {
+    input.type = 'password';
+    btn.textContent = 'Show';
+  }
+});
+
+$('btn-test-sync-ping')?.addEventListener('click', async () => {
+  const btn = $('btn-test-sync-ping');
+  btn.disabled = true;
+  btn.textContent = 'Testing...';
+  try {
+    await postJSON('/api/integrations/health', {
+      day,
+      steps: 8540,
+      active_calories: 420.0,
+      distance_m: 6200.0,
+      source: 'test_ping',
+    });
+    toast('✓ Test sync received! 8,540 steps & 420 kcal logged.');
+    await loadDay();
+  } catch (err) {
+    toast(`Sync test failed: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Send Test Ping';
+  }
+});
 
 function renderMeals(meals) {
   const box = $('meals');

@@ -24,6 +24,9 @@ def daily(request: Request, day: date | None = None):
         row = conn.execute(
             "SELECT * FROM v_daily_totals WHERE profile_id = ? AND day = ?", (profile_id, target_day)
         ).fetchone()
+        act_row = conn.execute(
+            "SELECT * FROM daily_activities WHERE profile_id = ? AND day = ?", (profile_id, target_day)
+        ).fetchone()
 
     targets = {
         "calorie_target": prof.get("calorie_target", 2200.0),
@@ -33,6 +36,16 @@ def daily(request: Request, day: date | None = None):
     }
 
     totals = {**EMPTY, **({k: v for k, v in dict(row).items() if k not in ("day", "profile_id")} if row else {})}
+    activity = {
+        "steps": act_row["steps"] if act_row else 0,
+        "active_calories": round(act_row["active_calories"], 1) if act_row else 0.0,
+        "distance_m": round(act_row["distance_m"], 1) if act_row else 0.0,
+        "heart_rate_avg": round(act_row["heart_rate_avg"], 1) if (act_row and act_row["heart_rate_avg"]) else None,
+        "sleep_minutes": act_row["sleep_minutes"] if (act_row and act_row["sleep_minutes"]) else None,
+        "source": act_row["source"] if act_row else None,
+        "updated_at": act_row["updated_at"] if act_row else None,
+    }
+
     return {
         "day": target_day,
         "profile": {
@@ -48,6 +61,7 @@ def daily(request: Request, day: date | None = None):
             "carbs_g": round(targets["carbs_target"] - totals["carbs_g"], 1),
             "fat_g": round(targets["fat_target"] - totals["fat_g"], 1),
         },
+        "activity": activity,
     }
 
 

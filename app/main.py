@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app import auth, config
 from app.db import init_db
-from app.routers import backup, coaching, knowledge, meals, photos, profiles, stats, weights, workouts
+from app.routers import backup, coaching, integrations, knowledge, meals, photos, profiles, stats, weights, workouts
 from app.services import images
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -43,10 +43,11 @@ async def auth_gate(request: Request, call_next):
         return await call_next(request)
 
     path = request.url.path
-    # Exempt routes: login, logout, static files, sw, manifest, liveness probe
+    # Exempt routes: login, logout, static files, sw, manifest, liveness probe, integrations
     if (
         path in ("/login", "/logout", "/sw.js", "/manifest.webmanifest", "/api/health/live")
         or path.startswith("/static/")
+        or path.startswith("/api/integrations/")
     ):
         return await call_next(request)
 
@@ -69,6 +70,7 @@ app.include_router(weights.router)
 app.include_router(knowledge.router)
 app.include_router(workouts.router)
 app.include_router(coaching.router)
+app.include_router(integrations.router)
 app.include_router(backup.router)
 
 

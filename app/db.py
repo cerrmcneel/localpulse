@@ -34,8 +34,25 @@ CREATE TABLE IF NOT EXISTS profiles (
     coaching_mode  TEXT NOT NULL DEFAULT 'coached',
     coaching_paused INTEGER NOT NULL DEFAULT 0,
     last_checkin_at TEXT,
-    last_estimated_tdee REAL
+    last_estimated_tdee REAL,
+    api_key        TEXT
 );
+
+CREATE TABLE IF NOT EXISTS daily_activities (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    profile_id     INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    day            TEXT    NOT NULL,
+    steps          INTEGER NOT NULL DEFAULT 0,
+    active_calories REAL    NOT NULL DEFAULT 0,
+    distance_m     REAL    NOT NULL DEFAULT 0,
+    heart_rate_avg REAL,
+    sleep_minutes  INTEGER,
+    source         TEXT    NOT NULL DEFAULT 'google_fit',
+    updated_at     TEXT    NOT NULL,
+    raw_json       TEXT,
+    UNIQUE(profile_id, day)
+);
+CREATE INDEX IF NOT EXISTS idx_activities_profile_day ON daily_activities(profile_id, day DESC);
 
 CREATE TABLE IF NOT EXISTS meals (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,6 +184,7 @@ CREATE INDEX IF NOT EXISTS idx_equip_profile ON profile_equipment(profile_id);
 CREATE INDEX IF NOT EXISTS idx_workouts_profile_day ON workouts(profile_id, day DESC);
 CREATE INDEX IF NOT EXISTS idx_weekly_plans_prof_week ON weekly_plans(profile_id, week_start);
 CREATE INDEX IF NOT EXISTS idx_checkins_prof_day ON coaching_checkins(profile_id, checkin_day DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_profile_day ON daily_activities(profile_id, day DESC);
 
 -- Daily totals are derived, never stored, so edits to a meal can never drift
 -- out of sync with the day's headline number.
@@ -313,6 +331,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "coaching_paused": "INTEGER NOT NULL DEFAULT 0",
         "last_checkin_at": "TEXT",
         "last_estimated_tdee": "REAL",
+        "api_key": "TEXT",
     }
     for col_name, col_def in new_profile_cols.items():
         if col_name not in profile_cols:
@@ -372,6 +391,32 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_checkins_prof_day ON coaching_checkins(profile_id, checkin_day DESC)")
+
+    # Ensure daily_activities table exists on existing databases
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS daily_activities (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            profile_id     INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+            day            TEXT    NOT NULL,
+            steps          INTEGER NOT NULL DEFAULT 0,
+            active_calories REAL    NOT NULL DEFAULT 0,
+            distance_m     REAL    NOT NULL DEFAULT 0,
+            heart_rate_avg REAL,
+            sleep_minutes  INTEGER,
+            source         TEXT    NOT NULL DEFAULT 'google_fit',
+            updated_at     TEXT    NOT NULL,
+            raw_json       TEXT,
+            UNIQUE(profile_id, day)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_profile_day ON daily_activities(profile_id, day DESC)")
+
+    # Ensure all profiles have an API key populated
+    import secrets
+    profiles_without_key = conn.execute("SELECT id FROM profiles WHERE api_key IS NULL OR api_key = ''").fetchall()
+    for p in profiles_without_key:
+        generated_key = f"lp_{secrets.token_hex(16)}"
+        conn.execute("UPDATE profiles SET api_key = ? WHERE id = ?", (generated_key, p["id"]))
 
 
 

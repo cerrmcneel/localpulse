@@ -177,4 +177,24 @@ class CoachingSettingsUpdate(BaseModel):
     goal_rate_kg_per_week: float | None = Field(default=None, ge=0.0, le=2.0)
 
 
+class ActivityManualIn(BaseModel):
+    day: date | None = None
+    steps: int = Field(default=0, ge=0, le=200000)
+    active_calories: float = Field(default=0.0, ge=0.0, le=20000.0)
+    distance_m: float = Field(default=0.0, ge=0.0, le=500000.0)
+    heart_rate_avg: float | None = Field(default=None, ge=30.0, le=250.0)
+    sleep_minutes: int | None = Field(default=None, ge=0, le=1440)
+
+
+class DailyActivityIn(BaseModel):
+    day: str | None = None
+    steps: int | None = Field(default=0, ge=0)
+    active_calories: float | None = Field(default=0.0, ge=0.0)
+    distance_m: float | None = Field(default=0.0, ge=0.0)
+    heart_rate_avg: float | None = Field(default=None)
+    sleep_minutes: int | None = Field(default=None)
+    source: str = Field(default="google_fit", max_length=60)
+    weight_kg: float | None = Field(default=None, gt=0, le=500)
+
+
 

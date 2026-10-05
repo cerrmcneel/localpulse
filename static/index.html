@@ -137,6 +137,43 @@
     </form>
   </section>
 
+  <section class="card" id="activity-card">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:18px">👟</span>
+        <h2>Daily Activity</h2>
+      </div>
+      <button type="button" id="btn-log-activity" class="meal-btn" style="margin-top:-6px">+ Log</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      <div style="background:var(--surface-2);padding:10px 12px;border-radius:10px;border:1px solid var(--line)">
+        <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px">Steps</div>
+        <div style="display:flex;align-items:baseline;gap:4px;margin-top:4px">
+          <span class="big" id="act-steps" style="font-size:22px;font-weight:700">0</span>
+          <span class="unit" style="font-size:11.5px;color:var(--muted)">/ 10,000</span>
+        </div>
+        <div class="bar" style="height:6px;margin-top:8px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden">
+          <i id="act-steps-bar" style="display:block;height:100%;width:0%;background:var(--accent);transition:width 0.3s"></i>
+        </div>
+      </div>
+
+      <div style="background:var(--surface-2);padding:10px 12px;border-radius:10px;border:1px solid var(--line)">
+        <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px">Active Burn</div>
+        <div style="display:flex;align-items:baseline;gap:4px;margin-top:4px">
+          <span class="big" id="act-burn" style="font-size:22px;font-weight:700">0</span>
+          <span class="unit" style="font-size:11.5px;color:var(--muted)">kcal</span>
+        </div>
+        <div id="act-distance" class="muted" style="font-size:11.5px;margin-top:8px">&mdash; km</div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:11.5px;color:var(--muted)">
+      <span id="act-source-badge">No activity logged for this day</span>
+      <button type="button" id="btn-quick-sync-info" class="meal-btn" style="font-size:11px;padding:2px 8px">Google Fit Setup ↗</button>
+    </div>
+  </section>
+
   <section class="card">
     <h2>Meals</h2>
     <div id="meals"><div class="empty">Nothing logged yet.</div></div>
@@ -610,8 +647,109 @@
         </div>
       </div>
 
+      <!-- Google Fit & Mobile Health Sync -->
+      <div class="field" style="margin-top:14px;padding:12px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-weight:600;font-size:13.5px;color:var(--text)">📱 Google Fit & Mobile Health Sync</span>
+          <span class="badge" style="font-size:11px;padding:2px 8px;border-radius:12px;background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.4);color:var(--accent)">Tailscale Ready</span>
+        </div>
+        <p class="muted" style="font-size:11.5px;margin:0 0 10px;line-height:1.4">
+          Harvest daily steps, active calories, sleep, and weight from Google Fit or Android Health Connect over Tailscale.
+        </p>
+        <div style="margin-bottom:8px">
+          <label style="font-size:11px;text-transform:uppercase;color:var(--muted)">Webhook Endpoint</label>
+          <div style="display:flex;gap:6px;margin-top:3px">
+            <input type="text" id="sync-webhook-url" readonly style="font-size:11.5px;font-family:monospace;flex:1;background:var(--surface)">
+            <button type="button" id="btn-copy-webhook" class="meal-btn" style="flex:none;font-size:11.5px;padding:4px 8px">Copy</button>
+          </div>
+        </div>
+        <div style="margin-bottom:8px">
+          <label style="font-size:11px;text-transform:uppercase;color:var(--muted)">Personal API Key</label>
+          <div style="display:flex;gap:6px;margin-top:3px">
+            <input type="password" id="sync-api-key" readonly style="font-size:11.5px;font-family:monospace;flex:1;background:var(--surface)">
+            <button type="button" id="btn-toggle-key-vis" class="meal-btn" style="flex:none;font-size:11.5px;padding:4px 8px">Show</button>
+            <button type="button" id="btn-copy-key" class="meal-btn" style="flex:none;font-size:11.5px;padding:4px 8px">Copy</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button type="button" id="btn-test-sync-ping" class="meal-btn" style="flex:1;font-size:12px;padding:6px;text-align:center">
+            ⚡ Send Test Ping
+          </button>
+          <button type="button" id="btn-open-sync-guide" class="meal-btn" style="flex:1;font-size:12px;padding:6px;text-align:center">
+            📖 Android Setup Guide
+          </button>
+        </div>
+      </div>
+
       <button type="submit" class="btn btn-primary full" style="margin-top:14px">Save Settings</button>
     </form>
+  </div>
+</div>
+
+<!-- Manual Activity Log Modal -->
+<div id="activity-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>Log Daily Activity</h3>
+      <button class="modal-close" data-close="activity-modal">&times;</button>
+    </div>
+    <form id="activity-form">
+      <div class="field" style="margin-bottom:12px">
+        <label for="act-steps-input">Steps</label>
+        <input type="number" id="act-steps-input" min="0" max="150000" placeholder="e.g. 8500" required>
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label for="act-cals-input">Active Calories (kcal)</label>
+        <input type="number" id="act-cals-input" min="0" max="10000" step="0.1" placeholder="e.g. 420">
+      </div>
+      <div class="field" style="margin-bottom:16px">
+        <label for="act-dist-input">Distance (km, optional)</label>
+        <input type="number" id="act-dist-input" min="0" max="100" step="0.1" placeholder="e.g. 6.2">
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn" data-close="activity-modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Activity</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Android Health Connect & Google Fit Guide Modal -->
+<div id="sync-guide-modal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:440px">
+    <div class="modal-head">
+      <h3>Google Fit &amp; Mobile Setup</h3>
+      <button class="modal-close" data-close="sync-guide-modal">&times;</button>
+    </div>
+    <div style="font-size:12.5px;line-height:1.5;color:var(--text)">
+      <p style="margin-bottom:10px">
+        Modern Android devices collect your steps and fitness in <strong>Health Connect</strong> (which powers Google Fit, Samsung Health, and Garmin). Because your phone is on Tailscale, it can push this data straight to LocalPulse automatically.
+      </p>
+
+      <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px">
+        <strong style="color:var(--accent);display:block;margin-bottom:4px">Method 1: Webhook Bridge App (Recommended)</strong>
+        <p style="margin:0 0 6px;color:var(--muted);font-size:11.5px">
+          Install a free automation or webhook app such as <strong>Health Connect to Webhook</strong>, <strong>FitnessSyncer</strong>, or <strong>Tasker</strong>.
+        </p>
+        <ol style="margin:0;padding-left:18px;font-size:11.5px;color:var(--muted)">
+          <li>Grant read permission for Steps and Active Calories.</li>
+          <li>Set Target URL to your Webhook endpoint: <code style="font-size:10.5px" id="guide-webhook-url">https://100.103.11.109/api/integrations/health</code></li>
+          <li>Add HTTP Header: <code style="font-size:10.5px">X-API-Key: &lt;your_key&gt;</code></li>
+          <li>Set schedule: hourly or nightly.</li>
+        </ol>
+      </div>
+
+      <div style="background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px">
+        <strong style="color:var(--text);display:block;margin-bottom:4px">Method 2: cURL / Script / Tasker HTTP Request</strong>
+        <pre style="background:var(--surface);padding:8px;border-radius:6px;font-size:10.5px;overflow-x:auto;margin:4px 0 0;color:var(--accent)">curl -X POST https://100.103.11.109/api/integrations/health \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"steps": 8500, "active_calories": 420.0}'</pre>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:14px">
+      <button type="button" class="btn btn-primary full" data-close="sync-guide-modal">Got it</button>
+    </div>
   </div>
 </div>
 
@@ -820,6 +958,6 @@
   <a href="/capture"><svg viewBox="0 0 24 24"><path d="M3 8h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13" r="3.6"/></svg>Capture</a>
   <a href="/progress"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M13 16V8M18 16v-3"/></svg>Progress</a>
 </nav>
-<script type="module" src="/static/js/dashboard.js?v=20260929_coaching"></script>
+<script type="module" src="/static/js/dashboard.js?v=20261005_activity"></script>
 </body>
 </html>
