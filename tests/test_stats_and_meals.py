@@ -312,3 +312,108 @@ def test_this_week_window_covers_exactly_seven_days(client, second_profile):
         f"today must count exactly 7"
     )
     assert week["total_minutes"] == 70
+
+
+def test_search_past_meals_groups_and_counts_recurring_meals(client, second_profile):
+    """Past meals are returned grouped by recipe with accurate times_logged counter."""
+    headers = {"X-Profile-ID": str(second_profile["id"])}
+    today = config.now().date().isoformat()
+    yesterday = (config.now().date() - timedelta(days=1)).isoformat()
+    two_days_ago = (config.now().date() - timedelta(days=2)).isoformat()
+
+    # Log Oatmeal twice on different days
+    client.post("/api/meals", json={
+        "name": "Morning Oatmeal",
+        "meal_type": "breakfast",
+        "day": yesterday,
+        "items": [
+            {"name": "Rolled Oats", "grams": 80, "calories": 300, "protein_g": 10, "carbs_g": 54, "fat_g": 5},
+            {"name": "Whole Milk", "grams": 200, "calories": 130, "protein_g": 7, "carbs_g": 10, "fat_g": 7},
+        ],
+    }, headers=headers)
+
+    client.post("/api/meals", json={
+        "name": "Morning Oatmeal",
+        "meal_type": "breakfast",
+        "day": today,
+        "items": [
+            {"name": "Rolled Oats", "grams": 80, "calories": 300, "protein_g": 10, "carbs_g": 54, "fat_g": 5},
+            {"name": "Whole Milk", "grams": 200, "calories": 130, "protein_g": 7, "carbs_g": 10, "fat_g": 7},
+        ],
+    }, headers=headers)
+
+    # Log Grilled Salmon once
+    client.post("/api/meals", json={
+        "name": "Grilled Salmon",
+        "meal_type": "dinner",
+        "day": two_days_ago,
+        "items": [
+            {"name": "Salmon Fillet", "grams": 200, "calories": 416, "protein_g": 40, "carbs_g": 0, "fat_g": 28},
+            {"name": "Steamed Asparagus", "grams": 100, "calories": 20, "protein_g": 2, "carbs_g": 4, "fat_g": 0},
+        ],
+    }, headers=headers)
+
+    res = client.get("/api/meals/search", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] == 2  # Deduplicated into 2 unique meals
+
+    oats = next(m for m in data["meals"] if m["name"] == "Morning Oatmeal")
+    assert oats["times_logged"] == 2
+    assert oats["last_day"] == today
+
+    salmon = next(m for m in data["meals"] if m["name"] == "Grilled Salmon")
+    assert salmon["times_logged"] == 1
+    assert salmon["last_day"] == two_days_ago
+
+
+def test_search_past_meals_by_ingredient_name(client, second_profile):
+    """Search matches not just meal name, but individual ingredient items."""
+    headers = {"X-Profile-ID": str(second_profile["id"])}
+    client.post("/api/meals", json={
+        "name": "Quick Energy Bowl",
+        "meal_type": "snack",
+        "items": [
+            {"name": "Greek Yogurt", "grams": 150, "calories": 140, "protein_g": 15, "carbs_g": 6, "fat_g": 4},
+            {"name": "Blueberries", "grams": 50, "calories": 40, "protein_g": 0.5, "carbs_g": 10, "fat_g": 0},
+        ],
+    }, headers=headers)
+
+    # Search for ingredient "blueberries"
+    res = client.get("/api/meals/search?q=blueberries", headers=headers)
+    assert res.status_code == 200
+    meals = res.json()["meals"]
+    assert len(meals) == 1
+    assert meals[0]["name"] == "Quick Energy Bowl"
+
+    # Search for non-existent item
+    empty_res = client.get("/api/meals/search?q=papaya", headers=headers)
+    assert empty_res.status_code == 200
+    assert len(empty_res.json()["meals"]) == 0
+
+
+def test_duplicate_past_meal_defaults_to_today(client, second_profile):
+    """Duplicating a past meal without a day param defaults to today."""
+    headers = {"X-Profile-ID": str(second_profile["id"])}
+    past_day = (config.now().date() - timedelta(days=14)).isoformat()
+    today = config.now().date().isoformat()
+
+    old_meal = client.post("/api/meals", json={
+        "name": "Pasta Bolognese",
+        "meal_type": "dinner",
+        "day": past_day,
+        "items": [
+            {"name": "Pasta", "grams": 100, "calories": 350, "protein_g": 12, "carbs_g": 70, "fat_g": 2},
+        ],
+    }, headers=headers).json()
+
+    assert old_meal["day"] == past_day
+
+    # Duplicate without specifying day -> defaults to today
+    dup_res = client.post(f"/api/meals/{old_meal['id']}/duplicate", headers=headers)
+    assert dup_res.status_code == 201
+    dup_meal = dup_res.json()
+    assert dup_meal["day"] == today
+    assert dup_meal["name"] == "Pasta Bolognese"
+    assert dup_meal["items"][0]["name"] == "Pasta"
+

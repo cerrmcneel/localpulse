@@ -1,6 +1,11 @@
-import { postForm, postJSON, fmt, round, toast, esc, checkHealth, prettyDate, shiftDay, todayISO, inferMealType, getFoodIcon } from './api.js';
+import { getJSON, postForm, postJSON, fmt, round, toast, esc, checkHealth, prettyDate, shiftDay, todayISO, inferMealType, getFoodIcon } from './api.js';
 
 const $ = (id) => document.getElementById(id);
+
+const MEAL_ICON = {
+  breakfast: '☕', lunch: '🍜', dinner: '🍽️',
+  snack: '🍎', other: '🍽️',
+};
 
 /** Working copy of the meal under review. Edits mutate this, never the DOM. */
 let draft = { name: 'Meal', items: [], pendingImage: null, model: null, raw: null, source: 'manual' };
@@ -33,6 +38,9 @@ function setMealDay(d) {
     $('today').textContent = isPast ? `Logging for ${label} (${selectedMealDay})` : prettyDate(todayISO());
     $('today').style.color = isPast ? 'var(--accent)' : '';
   }
+  const targetDayLabel = selectedMealDay === todayISO() ? 'Today' : prettyDate(selectedMealDay);
+  if ($('repeat-target-date-label')) $('repeat-target-date-label').textContent = targetDayLabel;
+  updateRepeatButtonsLabel(targetDayLabel);
 }
 
 const todayStr = todayISO();
@@ -49,9 +57,11 @@ $('btn-review-date-today')?.addEventListener('click', () => setMealDay(todayStr)
 $('btn-review-date-yesterday')?.addEventListener('click', () => setMealDay(yesterdayStr));
 
 function show(step) {
-  for (const id of ['step-capture', 'step-loading', 'step-review']) {
-    $(id).classList.toggle('hidden', id !== step);
-  }
+  const isCapture = step === 'step-capture';
+  $('step-capture')?.classList.toggle('hidden', !isCapture);
+  $('step-past-meals')?.classList.toggle('hidden', !isCapture);
+  $('step-loading')?.classList.toggle('hidden', step !== 'step-loading');
+  $('step-review')?.classList.toggle('hidden', step !== 'step-review');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -393,5 +403,229 @@ async function consumeSharedImage() {
   }
 }
 
+// --- Past Meals & Searchable Database ---
+let loadedPastMeals = [];
+let currentFilter = 'all';
+let currentSearchQuery = '';
+let searchDebounceTimer = null;
+
+async function fetchPastMeals(q = '') {
+  currentSearchQuery = q.trim();
+  const listEl = $('past-meals-list');
+  if (!listEl) return;
+
+  const sort = currentFilter === 'frequent' ? 'frequent' : 'recent';
+  const typeParam = ['breakfast', 'lunch', 'dinner', 'snack'].includes(currentFilter) ? `&meal_type=${currentFilter}` : '';
+
+  try {
+    const url = `/api/meals/search?q=${encodeURIComponent(currentSearchQuery)}&sort=${sort}${typeParam}`;
+    const data = await getJSON(url);
+    loadedPastMeals = data.meals || [];
+    renderPastMeals(loadedPastMeals);
+    if ($('past-meals-badge')) {
+      const count = data.total || loadedPastMeals.length;
+      $('past-meals-badge').textContent = `${count} ${count === 1 ? 'meal' : 'meals'}`;
+    }
+  } catch (err) {
+    listEl.innerHTML = `<div class="past-empty-state"><span class="past-empty-icon">⚠️</span>Could not load past meals: ${esc(err.message)}</div>`;
+  }
+}
+
+function updateRepeatButtonsLabel(label) {
+  const listEl = $('past-meals-list');
+  if (!listEl) return;
+  listEl.querySelectorAll('[data-repeat-id]').forEach(btn => {
+    btn.title = `Repeat this meal for ${label}`;
+  });
+}
+
+function renderPastMeals(meals) {
+  const listEl = $('past-meals-list');
+  if (!listEl) return;
+
+  let displayList = [...meals];
+  if (currentFilter === 'frequent') {
+    displayList = displayList.filter(m => (m.times_logged || 1) > 1);
+    if (!displayList.length) {
+      displayList = [...meals].sort((a, b) => (b.times_logged || 1) - (a.times_logged || 1));
+    }
+  }
+
+  if (!displayList.length) {
+    if (currentSearchQuery) {
+      listEl.innerHTML = `
+        <div class="past-empty-state">
+          <span class="past-empty-icon">🔍</span>
+          No past meals found matching "<strong>${esc(currentSearchQuery)}</strong>".<br>
+          <button type="button" class="btn" id="btn-reset-search" style="margin-top:10px;font-size:12px;min-height:32px">Clear search</button>
+        </div>`;
+      $('btn-reset-search')?.addEventListener('click', () => {
+        if ($('past-meals-search')) $('past-meals-search').value = '';
+        $('btn-clear-search')?.classList.add('hidden');
+        fetchPastMeals('');
+      });
+    } else {
+      listEl.innerHTML = `
+        <div class="past-empty-state">
+          <span class="past-empty-icon">🍽️</span>
+          No past meals logged yet.<br>
+          <small class="muted">Log your meals above with photos or descriptions, and they'll appear here for easy 1-click repeat!</small>
+        </div>`;
+    }
+    return;
+  }
+
+  const targetDayLabel = selectedMealDay === todayISO() ? 'Today' : prettyDate(selectedMealDay);
+
+  listEl.innerHTML = displayList.map(m => {
+    const thumb = m.image_url
+      ? `<img src="${esc(m.image_url)}" alt="" loading="lazy">`
+      : `<span class="thumb-none" aria-hidden="true">${esc(MEAL_ICON[m.meal_type] || '🍽️')}</span>`;
+
+    const itemsSummary = m.items && m.items.length
+      ? m.items.map(it => `${getFoodIcon(it.name)} ${it.name}${it.grams ? ` (${round(it.grams, 0)}g)` : ''}`).join(', ')
+      : 'No items recorded';
+
+    const lastDayStr = m.last_day ? prettyDate(m.last_day) : (m.day ? prettyDate(m.day) : '');
+    const frequentBadge = (m.times_logged && m.times_logged > 1)
+      ? `<span class="past-meal-frequent-badge" title="Logged ${m.times_logged} times">&#9733; ${m.times_logged}x</span>`
+      : '';
+
+    return `
+      <div class="past-meal-card" data-id="${m.id}">
+        <div class="past-meal-thumb-wrap">
+          ${thumb}
+        </div>
+        <div class="past-meal-body">
+          <div class="past-meal-header">
+            <span class="past-meal-title" title="${esc(m.name)}">${esc(m.name)}</span>
+            ${frequentBadge}
+          </div>
+          <div class="past-meal-meta">
+            <span class="past-meal-date">${esc(lastDayStr)}</span>
+            <span class="past-meal-dot">&middot;</span>
+            <span class="past-meal-kcal"><strong>${fmt(m.totals?.calories || 0)}</strong> kcal</span>
+            <span class="past-meal-macros">(${fmt(m.totals?.protein_g || 0)}P &middot; ${fmt(m.totals?.carbs_g || 0)}C &middot; ${fmt(m.totals?.fat_g || 0)}F)</span>
+          </div>
+          <div class="past-meal-items-preview" title="${esc(itemsSummary)}">
+            ${esc(itemsSummary)}
+          </div>
+        </div>
+        <div class="past-meal-actions">
+          <button type="button" class="btn btn-repeat" data-repeat-id="${m.id}" title="Repeat this meal for ${targetDayLabel}">
+            &#x21bb; Repeat
+          </button>
+          <button type="button" class="btn btn-tweak" data-tweak-id="${m.id}" title="Edit portions before saving">
+            &#x270e; Tweak
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  listEl.querySelectorAll('[data-repeat-id]').forEach(btn => {
+    btn.addEventListener('click', () => repeatPastMeal(Number(btn.dataset.repeatId), btn));
+  });
+
+  listEl.querySelectorAll('[data-tweak-id]').forEach(btn => {
+    btn.addEventListener('click', () => tweakPastMeal(Number(btn.dataset.tweakId)));
+  });
+}
+
+async function repeatPastMeal(mealId, btnEl) {
+  const meal = loadedPastMeals.find(m => m.id === mealId);
+  const targetDay = selectedMealDay || todayISO();
+  const dayName = targetDay === todayISO() ? 'Today' : prettyDate(targetDay);
+
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = 'Logging…';
+  }
+
+  try {
+    await postJSON(`/api/meals/${mealId}/duplicate?day=${encodeURIComponent(targetDay)}`, {});
+    const mealTitle = meal ? `"${meal.name}"` : 'Meal';
+    toast(`✓ ${mealTitle} logged for ${dayName}!`);
+    setTimeout(() => {
+      location.href = targetDay === todayISO() ? '/' : `/?day=${encodeURIComponent(targetDay)}`;
+    }, 550);
+  } catch (err) {
+    toast(err.message, true);
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerHTML = '&#x21bb; Repeat';
+    }
+  }
+}
+
+function tweakPastMeal(mealId) {
+  const meal = loadedPastMeals.find(m => m.id === mealId);
+  if (!meal) return;
+
+  draft = {
+    name: meal.name || 'Meal',
+    items: (meal.items || []).map(it => ({
+      name: it.name,
+      grams: round(it.grams, 1),
+      calories: round(it.calories, 1),
+      protein_g: round(it.protein_g, 1),
+      carbs_g: round(it.carbs_g, 1),
+      fat_g: round(it.fat_g, 1),
+      confidence: it.confidence || 'high',
+      basis: it.basis || '',
+    })),
+    pendingImage: null,
+    model: meal.model || null,
+    raw: null,
+    source: 'manual',
+  };
+
+  $('meal-name').value = draft.name;
+  if ($('meal-type')) $('meal-type').value = meal.meal_type || inferMealType();
+
+  if (meal.image_url) {
+    $('preview').src = meal.image_url;
+    $('preview').classList.remove('hidden');
+  } else {
+    $('preview').classList.add('hidden');
+  }
+  $('model-notes')?.classList.add('hidden');
+
+  renderItems();
+  show('step-review');
+  const dayName = selectedMealDay === todayISO() ? 'Today' : prettyDate(selectedMealDay);
+  toast(`Editing "${meal.name}" for ${dayName}`);
+}
+
+// Search and filter listeners
+const pastSearchInput = $('past-meals-search');
+const pastClearBtn = $('btn-clear-search');
+
+pastSearchInput?.addEventListener('input', (e) => {
+  const val = e.target.value;
+  pastClearBtn?.classList.toggle('hidden', !val);
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    fetchPastMeals(val);
+  }, 250);
+});
+
+pastClearBtn?.addEventListener('click', () => {
+  if (pastSearchInput) pastSearchInput.value = '';
+  pastClearBtn.classList.add('hidden');
+  fetchPastMeals('');
+  pastSearchInput?.focus();
+});
+
+document.querySelectorAll('.past-filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.past-filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter || 'all';
+    fetchPastMeals(pastSearchInput?.value || '');
+  });
+});
+
 checkHealth();
 consumeSharedImage();
+fetchPastMeals('');

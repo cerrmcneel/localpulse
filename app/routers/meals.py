@@ -157,6 +157,87 @@ def list_meals(request: Request, day: date | None = None, limit: int = 100):
         return {"day": target, "meals": [_fetch_meal(conn, r["id"]) for r in rows]}
 
 
+@router.get("/meals/search")
+def search_meals(
+    request: Request,
+    q: str = "",
+    limit: int = 40,
+    meal_type: str | None = None,
+    sort: str = "recent",
+):
+    """Search historical meals by name, notes, or ingredients for fast repeat."""
+    clean_q = q.strip()
+    limit = max(1, min(limit, 100))
+    with get_conn() as conn:
+        profile_id = get_profile_id(request, conn)
+
+        params: list = [profile_id]
+        where_clauses = ["m.profile_id = ?"]
+
+        if clean_q:
+            where_clauses.append(
+                """(
+                    m.name LIKE ?
+                    OR m.notes LIKE ?
+                    OR EXISTS (
+                        SELECT 1 FROM meal_items mi
+                        WHERE mi.meal_id = m.id AND mi.name LIKE ?
+                    )
+                )"""
+            )
+            pattern = f"%{clean_q}%"
+            params.extend([pattern, pattern, pattern])
+
+        if meal_type and meal_type in {"breakfast", "lunch", "dinner", "snack", "other"}:
+            where_clauses.append("m.meal_type = ?")
+            params.append(meal_type)
+
+        where_sql = " AND ".join(where_clauses)
+        candidate_limit = 300 if not clean_q else 150
+        sql = f"""
+            SELECT m.id
+            FROM meals m
+            WHERE {where_sql}
+            ORDER BY m.logged_at DESC
+            LIMIT ?
+        """
+        params.append(candidate_limit)
+        rows = conn.execute(sql, params).fetchall()
+
+        candidates = [_fetch_meal(conn, r["id"]) for r in rows if r]
+
+        # Deduplicate / group recurring meals by normalized signature:
+        # signature: (normalized meal name, sorted tuple of normalized item names)
+        groups: dict[tuple, dict] = {}
+        for meal in candidates:
+            if not meal:
+                continue
+            norm_name = meal["name"].strip().lower()
+            sorted_items = tuple(sorted(it["name"].strip().lower() for it in meal.get("items", [])))
+            sig = (norm_name, sorted_items)
+
+            if sig not in groups:
+                m_entry = dict(meal)
+                m_entry["times_logged"] = 1
+                m_entry["last_logged_at"] = meal["logged_at"]
+                m_entry["last_day"] = meal["day"]
+                groups[sig] = m_entry
+            else:
+                groups[sig]["times_logged"] += 1
+                if not groups[sig].get("image_url") and meal.get("image_url"):
+                    groups[sig]["image_url"] = meal["image_url"]
+                    groups[sig]["image_path"] = meal["image_path"]
+
+        results = list(groups.values())
+        if sort == "frequent":
+            results.sort(key=lambda m: (m["times_logged"], m["last_logged_at"]), reverse=True)
+        else:
+            results.sort(key=lambda m: m["last_logged_at"], reverse=True)
+
+        results = results[:limit]
+        return {"query": clean_q, "meals": results, "total": len(results)}
+
+
 @router.get("/meals/{meal_id}")
 def get_meal(request: Request, meal_id: int):
     with get_conn() as conn:

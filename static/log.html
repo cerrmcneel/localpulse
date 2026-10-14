@@ -75,6 +75,39 @@
     </div>
   </section>
 
+  <!-- PAST MEALS: searchable database & quick repeat -->
+  <section class="card" id="step-past-meals">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h2 style="margin:0">Past Meals &middot; Quick Repeat</h2>
+      <span id="past-meals-badge" class="chip" style="font-size:11px">Library</span>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:0 0 12px">
+      Search previous meals to repeat for <strong id="repeat-target-date-label">Today</strong> or customize.
+    </p>
+
+    <!-- Search box -->
+    <div class="past-search-wrap">
+      <span class="past-search-icon" aria-hidden="true">&#128269;</span>
+      <input type="search" id="past-meals-search" placeholder="Search by meal name or ingredient (e.g. oats, eggs)..." autocomplete="off" aria-label="Search past meals">
+      <button type="button" id="btn-clear-search" class="past-search-clear hidden" aria-label="Clear search">&times;</button>
+    </div>
+
+    <!-- Filter chips: All, Frequent, Breakfast, Lunch, Dinner, Snack -->
+    <div class="past-filters" role="tablist" aria-label="Filter past meals">
+      <button type="button" class="past-filter-btn active" data-filter="all">All</button>
+      <button type="button" class="past-filter-btn" data-filter="frequent">&#9733; Frequent</button>
+      <button type="button" class="past-filter-btn" data-filter="breakfast">&#9749; Breakfast</button>
+      <button type="button" class="past-filter-btn" data-filter="lunch">&#127836; Lunch</button>
+      <button type="button" class="past-filter-btn" data-filter="dinner">&#127869; Dinner</button>
+      <button type="button" class="past-filter-btn" data-filter="snack">&#127822; Snack</button>
+    </div>
+
+    <!-- Meal cards list -->
+    <div id="past-meals-list" class="past-meals-list" role="region" aria-live="polite">
+      <div class="past-empty-state">Loading previous meals&hellip;</div>
+    </div>
+  </section>
+
   <!-- STEP 2: analysing -->
   <section class="card hidden center" id="step-loading">
     <div class="spinner"></div>
@@ -171,6 +204,6 @@
   <a href="/capture"><svg viewBox="0 0 24 24"><path d="M3 8h4l2-3h6l2 3h4v12H3z"/><circle cx="12" cy="13" r="3.6"/></svg>Capture</a>
   <a href="/progress"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M13 16V8M18 16v-3"/></svg>Progress</a>
 </nav>
-<script type="module" src="/static/js/log.js?v=20261001"></script>
+<script type="module" src="/static/js/log.js?v=20261014"></script>
 </body>
 </html>
